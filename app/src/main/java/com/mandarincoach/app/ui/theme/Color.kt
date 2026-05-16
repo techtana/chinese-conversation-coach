@@ -24,3 +24,4 @@ val EnglishColor = Color(0xFF6B6560)
 val TipColor = Color(0xFF2980B9)
 
 val ListeningRed = Color(0xFFE74C3C)
+val UserPillColor = Color(0xFF2C3E50)   // dark navy pill for user messages

@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,17 +29,23 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mandarincoach.app.data.model.DictionaryEntry
 import com.mandarincoach.app.data.model.Message
 import com.mandarincoach.app.data.model.ProficiencyLevel
+import com.mandarincoach.app.data.repository.DictionaryRepository
 import com.mandarincoach.app.service.SpeechRecognitionService
 import com.mandarincoach.app.service.TextToSpeechService
 import com.mandarincoach.app.ui.theme.*
@@ -57,7 +64,6 @@ fun ConversationScreen(
 
     val tts = remember { TextToSpeechService(context) }
     val stt = remember { SpeechRecognitionService(context) }
-    val isSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()
     val isListening by stt.isListening.collectAsStateWithLifecycle()
     val recognizedText by stt.recognizedText.collectAsStateWithLifecycle()
     val sttError by stt.error.collectAsStateWithLifecycle()
@@ -65,16 +71,17 @@ fun ConversationScreen(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
+    // Dictionary popup state
+    var dictEntry by remember { mutableStateOf<DictionaryEntry?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showDictSheet by remember { mutableStateOf(false) }
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) stt.startListening()
-    }
+    ) { granted -> if (granted) stt.startListening() }
 
-    // Initialize conversation
     LaunchedEffect(level) { viewModel.initialize(level) }
 
-    // Handle speech recognition result
     LaunchedEffect(recognizedText) {
         recognizedText?.let { text ->
             if (text.isNotBlank()) {
@@ -84,14 +91,12 @@ fun ConversationScreen(
         }
     }
 
-    // Auto-scroll to latest message
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
             listState.animateScrollToItem(uiState.messages.size - 1)
         }
     }
 
-    // Auto-speak AI responses
     LaunchedEffect(uiState.messages) {
         val last = uiState.messages.lastOrNull()
         if (last != null && !last.isUser && last.hanzi.isNotBlank()) {
@@ -100,10 +105,7 @@ fun ConversationScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose {
-            tts.shutdown()
-            stt.destroy()
-        }
+        onDispose { tts.shutdown(); stt.destroy() }
     }
 
     Scaffold(
@@ -113,15 +115,11 @@ fun ConversationScreen(
                 title = {
                     Column {
                         Text(
-                            text = "${level.emoji} ${level.hanzi} · ${level.englishName}",
+                            text = "${level.emoji} ${level.hanzi}  ${level.englishName}",
                             style = MaterialTheme.typography.titleLarge,
                             color = TextPrimary
                         )
-                        Text(
-                            text = level.pinyin,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = PinyinColor
-                        )
+                        Text(text = level.pinyin, style = MaterialTheme.typography.bodySmall, color = PinyinColor)
                     }
                 },
                 navigationIcon = {
@@ -155,9 +153,8 @@ fun ConversationScreen(
                 },
                 onMicClick = {
                     focusManager.clearFocus()
-                    if (isListening) {
-                        stt.stopListening()
-                    } else {
+                    if (isListening) stt.stopListening()
+                    else {
                         val hasPerm = ContextCompat.checkSelfPermission(
                             context, Manifest.permission.RECORD_AUDIO
                         ) == PackageManager.PERMISSION_GRANTED
@@ -168,241 +165,488 @@ fun ConversationScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+
             // Error banner
             AnimatedVisibility(visible = uiState.error != null) {
-                uiState.error?.let { error ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                uiState.error?.let { err ->
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = error,
+                                err,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f)
                             )
                             IconButton(onClick = { viewModel.clearError() }) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Dismiss",
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
                 }
             }
 
-            // STT error
             AnimatedVisibility(visible = sttError != null) {
                 sttError?.let {
                     Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = it,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(16.dp, 8.dp)
-                        )
+                        Text(it, color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp, 8.dp))
                     }
                     LaunchedEffect(it) { kotlinx.coroutines.delay(3000); stt.clearError() }
                 }
             }
 
-            // Messages
+            // Hint strip
+            Surface(color = SurfaceGray, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Tap any Chinese character to see its definition  •  点击汉字查看释义",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextHint,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+
+            // Messages list
             LazyColumn(
                 state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(uiState.messages, key = { it.id }) { message ->
-                    MessageBubble(
+                    MessageRow(
                         message = message,
                         showEnglish = uiState.showEnglish,
-                        onSpeak = { tts.speak(message.hanzi, uiState.speechSpeed) }
+                        speechSpeed = uiState.speechSpeed,
+                        onSpeak = { tts.speak(message.hanzi, uiState.speechSpeed) },
+                        onSpeakSlow = { tts.speak(message.hanzi, uiState.speechSpeed * 0.6f) },
+                        onWordTap = { entry ->
+                            dictEntry = entry
+                            showDictSheet = true
+                        }
                     )
                 }
-
                 if (uiState.isLoading) {
                     item { TypingIndicator() }
                 }
             }
         }
     }
+
+    // Dictionary bottom sheet
+    if (showDictSheet && dictEntry != null) {
+        ModalBottomSheet(
+            onDismissRequest = { showDictSheet = false },
+            sheetState = sheetState,
+            containerColor = SurfaceWhite,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            DictionarySheet(entry = dictEntry!!, onDismiss = { showDictSheet = false })
+        }
+    }
+}
+
+// ── Message row ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun MessageRow(
+    message: Message,
+    showEnglish: Boolean,
+    speechSpeed: Float,
+    onSpeak: () -> Unit,
+    onSpeakSlow: () -> Unit,
+    onWordTap: (DictionaryEntry) -> Unit
+) {
+    if (message.isUser) {
+        UserMessageRow(message)
+    } else {
+        AiMessageRow(
+            message = message,
+            showEnglish = showEnglish,
+            onSpeak = onSpeak,
+            onSpeakSlow = onSpeakSlow,
+            onWordTap = onWordTap
+        )
+    }
 }
 
 @Composable
-private fun MessageBubble(
+private fun AiMessageRow(
     message: Message,
     showEnglish: Boolean,
-    onSpeak: () -> Unit
+    onSpeak: () -> Unit,
+    onSpeakSlow: () -> Unit,
+    onWordTap: (DictionaryEntry) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
-    ) {
-        if (!message.isUser) {
-            // Coach avatar
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            // Avatar
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(ChineseRed),
                 contentAlignment = Alignment.Center
             ) {
-                Text("明", color = Color.White, fontSize = 16.sp, fontFamily = FontFamily.Serif)
+                Text("明", color = Color.White, fontSize = 20.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium)
             }
-            Spacer(Modifier.width(8.dp))
-        }
+            Spacer(Modifier.width(12.dp))
 
-        Card(
-            modifier = Modifier.widthIn(max = 300.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (message.isUser) UserBubble else AiBubble
-            ),
-            shape = RoundedCornerShape(
-                topStart = if (message.isUser) 20.dp else 4.dp,
-                topEnd = if (message.isUser) 4.dp else 20.dp,
-                bottomStart = 20.dp,
-                bottomEnd = 20.dp
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                if (message.isUser) {
+            Column(modifier = Modifier.weight(1f)) {
+                // Tappable Hanzi text
+                TappableHanziText(
+                    hanzi = message.hanzi,
+                    onWordTap = onWordTap
+                )
+
+                if (message.pinyin.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = message.hanzi,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = UserBubbleText
+                        text = message.pinyin,
+                        fontSize = 14.sp,
+                        color = PinyinColor,
+                        fontStyle = FontStyle.Italic,
+                        lineHeight = 20.sp
                     )
-                } else {
-                    // Hanzi
+                }
+
+                if (showEnglish && message.english.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = message.hanzi,
-                        fontSize = 22.sp,
-                        fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.Normal,
-                        color = TextPrimary,
-                        lineHeight = 32.sp
+                        text = message.english,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = EnglishColor,
+                        fontStyle = FontStyle.Italic
                     )
+                }
 
-                    if (message.pinyin.isNotBlank()) {
-                        Spacer(Modifier.height(6.dp))
+                if (message.tip != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text("💡 ", fontSize = 13.sp)
                         Text(
-                            text = message.pinyin,
-                            fontSize = 14.sp,
-                            color = PinyinColor,
-                            fontStyle = FontStyle.Italic,
-                            lineHeight = 20.sp
-                        )
-                    }
-
-                    if (showEnglish && message.english.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = message.english,
+                            text = message.tip,
                             style = MaterialTheme.typography.bodySmall,
-                            color = EnglishColor,
-                            lineHeight = 18.sp
+                            color = TipColor,
+                            fontStyle = FontStyle.Italic
                         )
                     }
+                }
 
-                    if (message.tip != null) {
-                        Spacer(Modifier.height(8.dp))
-                        HorizontalDivider(color = SurfaceGray)
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.Top) {
-                            Text("💡 ", fontSize = 13.sp)
-                            Text(
-                                text = message.tip,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TipColor,
-                                fontStyle = FontStyle.Italic
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                        IconButton(
-                            onClick = onSpeak,
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.VolumeUp,
-                                contentDescription = "Speak",
-                                tint = TextHint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
+                // Action buttons
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MessageIconButton(icon = Icons.Default.VolumeUp, label = "Normal speed", onClick = onSpeak)
+                    MessageIconButton(icon = Icons.Default.Speed, label = "Slow speed", onClick = onSpeakSlow)
                 }
             }
         }
-
-        if (message.isUser) Spacer(Modifier.width(8.dp))
     }
 }
 
 @Composable
-private fun TypingIndicator() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+private fun TappableHanziText(
+    hanzi: String,
+    onWordTap: (DictionaryEntry) -> Unit
+) {
+    // Render each character as a tappable span using flow layout
+    val charGroups = remember(hanzi) { segmentHanzi(hanzi) }
+
+    // We render using a custom flow-wrap layout via wrapping Row logic
+    // For simplicity, use annotated text approach with character-level clicks
+    var highlightedIndex by remember { mutableIntStateOf(-1) }
+
+    Column {
+        // Build rows of characters (wrap at screen width naturally)
+        var currentRowChars = mutableListOf<Pair<Int, String>>() // index + segment
+        val rows = mutableListOf<List<Pair<Int, String>>>()
+        charGroups.forEach { (idx, seg) ->
+            currentRowChars.add(idx to seg)
+        }
+        rows.add(currentRowChars)
+
+        // Render as a single wrapping line using BoxWithConstraints + Flow
+        HanziCharacterFlow(
+            segments = charGroups,
+            highlightedIndex = highlightedIndex,
+            onSegmentTap = { segIndex, segText ->
+                highlightedIndex = segIndex
+                val entry = DictionaryRepository.lookupWithContext(hanzi, segIndex)
+                    ?: DictionaryRepository.lookup(segText)
+                if (entry != null) onWordTap(entry)
+                else {
+                    // Show a "not found" entry
+                    onWordTap(
+                        DictionaryEntry(
+                            hanzi = segText,
+                            pinyin = "—",
+                            definition = "Not found in dictionary. Try tapping the full word.",
+                            hskLevel = 0
+                        )
+                    )
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun HanziCharacterFlow(
+    segments: List<Pair<Int, String>>,
+    highlightedIndex: Int,
+    onSegmentTap: (Int, String) -> Unit
+) {
+    // Use a wrapping FlowRow-like approach with Compose
+    // We'll use a custom layout with wrapping Row
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.Start,
+        modifier = Modifier.fillMaxWidth()
     ) {
+        segments.forEach { (index, seg) ->
+            val isPunct = seg.all { !it.isLetterOrDigit() && it.code < 0x4E00 }
+            val isHighlighted = index == highlightedIndex
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(
+                        if (isHighlighted) ChineseRed.copy(alpha = 0.12f)
+                        else Color.Transparent
+                    )
+                    .then(
+                        if (!isPunct) Modifier.clickable { onSegmentTap(index, seg) }
+                        else Modifier
+                    )
+                    .padding(horizontal = 1.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = seg,
+                    fontSize = 22.sp,
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Normal,
+                    color = if (isHighlighted) ChineseRed else TextPrimary,
+                    lineHeight = 32.sp
+                )
+            }
+        }
+    }
+}
+
+private fun segmentHanzi(hanzi: String): List<Pair<Int, String>> {
+    // Break into individual characters, preserving position index for dictionary lookup
+    val result = mutableListOf<Pair<Int, String>>()
+    hanzi.forEachIndexed { index, ch -> result.add(index to ch.toString()) }
+    return result
+}
+
+@Composable
+private fun UserMessageRow(message: Message) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.End
+    ) {
+        // Pill bubble
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(ChineseRed),
+                .clip(RoundedCornerShape(20.dp))
+                .background(UserPillColor)
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            Text(
+                text = message.hanzi,
+                fontSize = 17.sp,
+                color = Color.White,
+                fontWeight = FontWeight.Normal,
+                lineHeight = 24.sp
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // User action buttons (right-aligned)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            UserActionButton(icon = Icons.Default.Edit, label = "Edit")
+            UserActionButton(icon = Icons.Default.Translate, label = "Translate")
+            UserActionButton(icon = Icons.Default.PlayArrow, label = "Play")
+        }
+    }
+}
+
+@Composable
+private fun MessageIconButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        modifier = Modifier.size(36.dp),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = SurfaceGray,
+            contentColor = TextSecondary
+        )
+    ) {
+        Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun UserActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit = {}) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        modifier = Modifier.size(36.dp),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = SurfaceGray,
+            contentColor = TextSecondary
+        )
+    ) {
+        Icon(icon, contentDescription = label, modifier = Modifier.size(16.dp))
+    }
+}
+
+// ── Typing indicator ──────────────────────────────────────────────────────────
+
+@Composable
+private fun TypingIndicator() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(ChineseRed),
             contentAlignment = Alignment.Center
         ) {
-            Text("明", color = Color.White, fontSize = 16.sp, fontFamily = FontFamily.Serif)
+            Text("明", color = Color.White, fontSize = 20.sp, fontFamily = FontFamily.Serif)
         }
-        Spacer(Modifier.width(8.dp))
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AiBubble),
-            shape = RoundedCornerShape(topStart = 4.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 20.dp),
-            elevation = CardDefaults.cardElevation(1.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                repeat(3) { index ->
-                    val infiniteTransition = rememberInfiniteTransition(label = "dot$index")
-                    val scale by infiniteTransition.animateFloat(
-                        initialValue = 0.6f, targetValue = 1.0f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(500, delayMillis = index * 150, easing = EaseInOut),
-                            repeatMode = RepeatMode.Reverse
-                        ), label = "scale$index"
+        Spacer(Modifier.width(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            repeat(3) { index ->
+                val infiniteTransition = rememberInfiniteTransition(label = "dot$index")
+                val scale by infiniteTransition.animateFloat(
+                    initialValue = 0.5f, targetValue = 1.0f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(500, delayMillis = index * 160, easing = EaseInOut),
+                        repeatMode = RepeatMode.Reverse
+                    ), label = "s$index"
+                )
+                Box(
+                    modifier = Modifier.size(10.dp).scale(scale)
+                        .clip(CircleShape).background(ChineseRedLight)
+                )
+            }
+        }
+    }
+}
+
+// ── Dictionary bottom sheet ───────────────────────────────────────────────────
+
+@Composable
+private fun DictionarySheet(entry: DictionaryEntry, onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 32.dp)
+    ) {
+        // Handle bar
+        Box(
+            modifier = Modifier.width(40.dp).height(4.dp).clip(CircleShape)
+                .background(TextHint).align(Alignment.CenterHorizontally)
+        )
+        Spacer(Modifier.height(20.dp))
+
+        Row(verticalAlignment = Alignment.Bottom) {
+            // Large character display
+            Text(
+                text = entry.hanzi,
+                fontSize = 56.sp,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Light,
+                color = TextPrimary
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                if (entry.hskLevel > 0) {
+                    Surface(
+                        color = ChineseRed,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "HSK ${entry.hskLevel}",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (entry.partOfSpeech.isNotBlank()) {
+                    Text(
+                        text = entry.partOfSpeech,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextHint,
+                        fontStyle = FontStyle.Italic
                     )
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .scale(scale)
-                            .clip(CircleShape)
-                            .background(ChineseRedLight)
+                }
+            }
+        }
+
+        // Pinyin
+        Text(
+            text = entry.pinyin,
+            fontSize = 22.sp,
+            color = PinyinColor,
+            fontStyle = FontStyle.Italic,
+            fontWeight = FontWeight.Normal
+        )
+        Spacer(Modifier.height(12.dp))
+
+        HorizontalDivider(color = SurfaceGray)
+        Spacer(Modifier.height(12.dp))
+
+        // Definition
+        Text(
+            text = "Definition",
+            style = MaterialTheme.typography.labelSmall,
+            color = ChineseRed,
+            letterSpacing = 1.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = entry.definition,
+            style = MaterialTheme.typography.bodyLarge,
+            color = TextPrimary
+        )
+
+        // Examples
+        if (entry.examples.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Examples · 例句",
+                style = MaterialTheme.typography.labelSmall,
+                color = ChineseRed,
+                letterSpacing = 1.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            entry.examples.forEach { (hanziEx, englishEx) ->
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    Text(
+                        text = hanziEx,
+                        fontSize = 18.sp,
+                        fontFamily = FontFamily.Serif,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = englishEx,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = EnglishColor,
+                        fontStyle = FontStyle.Italic
                     )
                 }
             }
         }
     }
 }
+
+// ── Input bar ─────────────────────────────────────────────────────────────────
 
 @Composable
 private fun InputBar(
@@ -413,10 +657,7 @@ private fun InputBar(
     onSend: () -> Unit,
     onMicClick: () -> Unit
 ) {
-    Surface(
-        shadowElevation = 8.dp,
-        color = SurfaceWhite
-    ) {
+    Surface(shadowElevation = 8.dp, color = SurfaceWhite) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -426,7 +667,6 @@ private fun InputBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Mic button
             val micScale by animateFloatAsState(
                 targetValue = if (isListening) 1.15f else 1f,
                 animationSpec = spring(stiffness = Spring.StiffnessMedium),
@@ -441,20 +681,19 @@ private fun InputBar(
                 )
             ) {
                 Icon(
-                    imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                    contentDescription = if (isListening) "Stop listening" else "Speak",
+                    if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = if (isListening) "Stop" else "Speak",
                     modifier = Modifier.size(22.dp)
                 )
             }
 
-            // Text field
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChange,
                 modifier = Modifier.weight(1f),
                 placeholder = {
                     Text(
-                        if (isListening) "Listening… 听着呢…" else "Type or speak…",
+                        if (isListening) "Listening…" else "Type in Chinese or English…",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextHint
                     )
@@ -469,11 +708,9 @@ private fun InputBar(
                     unfocusedBorderColor = SurfaceGray,
                     focusedContainerColor = SurfaceWhite,
                     unfocusedContainerColor = BackgroundWarm
-                ),
-                textStyle = MaterialTheme.typography.bodyLarge
+                )
             )
 
-            // Send button
             FilledIconButton(
                 onClick = onSend,
                 enabled = text.isNotBlank() && !isLoading,
@@ -485,17 +722,9 @@ private fun InputBar(
                 )
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                 } else {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", modifier = Modifier.size(20.dp))
                 }
             }
         }
