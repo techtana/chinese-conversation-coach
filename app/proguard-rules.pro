@@ -1,0 +1,4 @@
+-keep class com.mandarincoach.app.data.model.** { *; }
+-keepattributes *Annotation*
+-dontwarn okhttp3.**
+-dontwarn okio.**
