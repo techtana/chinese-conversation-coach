@@ -50,7 +50,7 @@ import com.mandarincoach.app.service.SpeechRecognitionService
 import com.mandarincoach.app.service.TextToSpeechService
 import com.mandarincoach.app.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) // Add ExperimentalLayoutApi here
 @Composable
 fun ConversationScreen(
     level: ProficiencyLevel,
@@ -63,7 +63,7 @@ fun ConversationScreen(
     val focusManager = LocalFocusManager.current
 
     val tts = remember { TextToSpeechService(context) }
-    val stt = remember { SpeechRecognitionService(context) }
+    val stt = remember { SpeechRecognitionService() }
     val isListening by stt.isListening.collectAsStateWithLifecycle()
     val recognizedText by stt.recognizedText.collectAsStateWithLifecycle()
     val sttError by stt.error.collectAsStateWithLifecycle()
@@ -76,9 +76,19 @@ fun ConversationScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showDictSheet by remember { mutableStateOf(false) }
 
+    val sttLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        stt.handleActivityResult(result.resultCode, result.data)
+    }
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) stt.startListening() }
+    ) { granted ->
+        if (granted) {
+            sttLauncher.launch(stt.createRecognizerIntent())
+        }
+    }
 
     LaunchedEffect(level) { viewModel.initialize(level) }
 
@@ -105,7 +115,7 @@ fun ConversationScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { tts.shutdown(); stt.destroy() }
+        onDispose { tts.shutdown() }
     }
 
     Scaffold(
@@ -153,13 +163,13 @@ fun ConversationScreen(
                 },
                 onMicClick = {
                     focusManager.clearFocus()
-                    if (isListening) stt.stopListening()
-                    else {
-                        val hasPerm = ContextCompat.checkSelfPermission(
-                            context, Manifest.permission.RECORD_AUDIO
-                        ) == PackageManager.PERMISSION_GRANTED
-                        if (hasPerm) stt.startListening()
-                        else micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    val hasPerm = ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (hasPerm) {
+                        sttLauncher.launch(stt.createRecognizerIntent())
+                    } else {
+                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 }
             )
@@ -394,6 +404,7 @@ private fun TappableHanziText(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HanziCharacterFlow(
     segments: List<Pair<Int, String>>,
@@ -402,7 +413,7 @@ private fun HanziCharacterFlow(
 ) {
     // Use a wrapping FlowRow-like approach with Compose
     // We'll use a custom layout with wrapping Row
-    androidx.compose.foundation.layout.FlowRow(
+    FlowRow(
         horizontalArrangement = Arrangement.Start,
         modifier = Modifier.fillMaxWidth()
     ) {
