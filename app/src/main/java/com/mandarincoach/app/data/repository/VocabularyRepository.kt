@@ -107,14 +107,49 @@ object VocabularyRepository {
         ProficiencyLevel.FLUENT -> advancedWords + fluentWords
     }
 
+    /**
+     * Extracts Chinese words from a string. Currently uses character-based 
+     * segmentation but can be expanded to use a dictionary-based segmenter.
+     */
+    fun segment(text: String): Set<String> {
+        return text.filter { it.code in 0x4E00..0x9FFF }
+            .map { it.toString() }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    /**
+     * Filters the global corpus based on HSK/Level ranking and user progress.
+     * Ensures the bot primarily uses "learned" words and introduces a controlled amount of new ones.
+     */
+    fun getActiveVocabulary(
+        level: ProficiencyLevel,
+        learnedWords: Set<String>,
+        newWordsTarget: Int
+    ): List<String> {
+        val fullCorpus = getVocabularyForLevel(level)
+        
+        // Words the user already knows
+        val alreadyLearned = fullCorpus.filter { it in learnedWords }
+        
+        // New words to introduce (ranked by appearance in the corpus list)
+        val newWords = fullCorpus.filter { it !in learnedWords }.take(newWordsTarget)
+        
+        return alreadyLearned + newWords
+    }
+
     fun buildSystemPrompt(
         level: ProficiencyLevel,
         userName: String = "",
         learningGoals: String = "",
-        interests: String = ""
+        interests: String = "",
+        activeVocab: List<String> = emptyList()
     ): String {
-        val vocab = getVocabularyForLevel(level)
-        val vocabSample = vocab.take(80).joinToString("、")
+        val vocabSample = if (activeVocab.isNotEmpty()) {
+            activeVocab.joinToString("、")
+        } else {
+            getVocabularyForLevel(level).take(80).joinToString("、")
+        }
 
         val userContext = buildString {
             if (userName.isNotBlank()) append("- The student's name is $userName.\n")
@@ -158,8 +193,10 @@ Student level: ${level.englishName} (${level.hanzi})
 
 ${if (userContext.isNotBlank()) "Student Profile:\n$userContext" else ""}
 
-Core vocabulary for this level (use these words naturally):
+Core vocabulary for this level (STRICTLY LIMIT yourself to these words + basic particles like 的, 了, 吧):
 $vocabSample
+
+IMPORTANT: If you need to use a word NOT in the list above to make a natural sentence, you MUST explain it in the "tip" field.
 
 Level-specific guidelines:
 $levelGuidance

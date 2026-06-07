@@ -7,7 +7,8 @@ import com.mandarincoach.app.data.model.CoachResponse
 import com.mandarincoach.app.data.model.Message
 import com.mandarincoach.app.data.model.ProficiencyLevel
 import com.mandarincoach.app.data.preferences.UserPreferences
-import com.mandarincoach.app.data.repository.ClaudeRepository
+import com.mandarincoach.app.data.repository.LLMRepository
+import com.mandarincoach.app.data.repository.VocabularyRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +27,7 @@ data class ConversationUiState(
 class ConversationViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = UserPreferences(application)
-    private val repository = ClaudeRepository(prefs)
+    private val repository = LLMRepository(prefs)
 
     private val _uiState = MutableStateFlow(ConversationUiState())
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
@@ -96,6 +97,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             val provider = prefs.llmProvider.first()
             val cModel = prefs.customModel.first()
             val cUrl = prefs.customBaseUrl.first()
+            val learned = prefs.learnedWords.first()
+            val target = prefs.newWordsTarget.first()
 
             repository.sendMessage(
                 userInput = text,
@@ -105,10 +108,18 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 userName = name,
                 learningGoals = goals,
                 interests = ints,
+                learnedWords = learned,
+                newWordsTarget = target,
                 provider = provider,
                 customModel = cModel,
                 customBaseUrl = cUrl
             ).onSuccess { response ->
+                // Auto-learn words used by the AI
+                viewModelScope.launch {
+                    val wordsInResponse = VocabularyRepository.segment(response.hanzi)
+                    prefs.addLearnedWords(wordsInResponse)
+                }
+
                 val aiMessage = response.toMessage()
                 _uiState.value = _uiState.value.copy(
                     messages = currentMessages + aiMessage,

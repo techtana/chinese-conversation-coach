@@ -38,6 +38,27 @@ enum class LLMProvider(
         0.075,
         0.30
     ),
+    DEEPINFRA(
+        "DeepInfra",
+        "meta-llama/Llama-3-70b-chat-hf",
+        "https://api.deepinfra.com/v1/openai/chat/completions",
+        0.10,
+        0.10
+    ),
+    AZURE(
+        "Azure AI Foundry",
+        "gpt-4o",
+        "", // Requires custom endpoint
+        0.15,
+        0.60
+    ),
+    AWS_BEDROCK(
+        "AWS Bedrock (via Gateway)",
+        "anthropic.claude-3-haiku",
+        "", // Requires custom gateway
+        0.25,
+        1.25
+    ),
     PRIVATE(
         "Private API / Custom",
         "custom-model",

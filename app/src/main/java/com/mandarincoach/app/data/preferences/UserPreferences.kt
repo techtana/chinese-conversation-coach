@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mandarincoach.app.data.model.LLMProvider
@@ -33,6 +34,10 @@ class UserPreferences(private val context: Context) {
         private val CUSTOM_MODEL = stringPreferencesKey("custom_model")
         private val CUSTOM_BASE_URL = stringPreferencesKey("custom_base_url")
         private val TOTAL_COST = floatPreferencesKey("total_cost")
+        
+        // Vocabulary Progress Keys
+        private val LEARNED_WORDS = stringPreferencesKey("learned_words")
+        private val NEW_WORDS_TARGET = intPreferencesKey("new_words_target")
     }
 
     val apiKey: Flow<String> = context.dataStore.data.map { it[API_KEY] ?: "" }
@@ -49,6 +54,12 @@ class UserPreferences(private val context: Context) {
     val customModel: Flow<String> = context.dataStore.data.map { it[CUSTOM_MODEL] ?: "" }
     val customBaseUrl: Flow<String> = context.dataStore.data.map { it[CUSTOM_BASE_URL] ?: "" }
     val totalCost: Flow<Float> = context.dataStore.data.map { it[TOTAL_COST] ?: 0.0f }
+
+    val learnedWords: Flow<Set<String>> = context.dataStore.data.map { 
+        it[LEARNED_WORDS]?.split(",")?.filter { s -> s.isNotBlank() }?.toSet() ?: emptySet() 
+    }
+    
+    val newWordsTarget: Flow<Int> = context.dataStore.data.map { it[NEW_WORDS_TARGET] ?: 30 }
 
     val proficiencyLevel: Flow<ProficiencyLevel> = context.dataStore.data.map {
         runCatching { ProficiencyLevel.valueOf(it[PROFICIENCY_LEVEL] ?: "") }
@@ -102,6 +113,18 @@ class UserPreferences(private val context: Context) {
 
     suspend fun resetCost() {
         context.dataStore.edit { it[TOTAL_COST] = 0.0f }
+    }
+
+    suspend fun addLearnedWords(words: Set<String>) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[LEARNED_WORDS]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+            val updated = current + words
+            prefs[LEARNED_WORDS] = updated.joinToString(",")
+        }
+    }
+    
+    suspend fun setNewWordsTarget(target: Int) {
+        context.dataStore.edit { it[NEW_WORDS_TARGET] = target }
     }
 
     suspend fun setProficiencyLevel(level: ProficiencyLevel) {

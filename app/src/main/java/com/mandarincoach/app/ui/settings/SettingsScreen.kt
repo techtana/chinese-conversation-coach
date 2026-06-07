@@ -7,6 +7,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -61,6 +63,10 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     var llmProvider by remember(savedProvider) { mutableStateOf(savedProvider) }
     var customModel by remember(savedCustomModel) { mutableStateOf(savedCustomModel) }
     var customUrl by remember(savedCustomUrl) { mutableStateOf(savedCustomUrl) }
+
+    val savedNewWordsTarget by prefs.newWordsTarget.collectAsState(initial = 30)
+    val savedLearnedCount by prefs.learnedWords.collectAsState(initial = emptySet())
+    var newWordsTarget by remember(savedNewWordsTarget) { mutableIntStateOf(savedNewWordsTarget) }
 
     var showApiKey by remember { mutableStateOf(false) }
     var saveSuccess by remember { mutableStateOf(false) }
@@ -158,6 +164,81 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 }
             }
 
+            // Vocabulary Section
+            SettingsSection(title = "Vocabulary · 词汇学习") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Learning Speed", style = MaterialTheme.typography.bodyMedium)
+                        Text("Target new words in chat: $newWordsTarget", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { 
+                            if (newWordsTarget > 5) {
+                                newWordsTarget -= 5
+                                scope.launch { prefs.setNewWordsTarget(newWordsTarget) }
+                            }
+                        }) {
+                            Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = ChineseRed)
+                        }
+                        Text(newWordsTarget.toString(), fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { 
+                            newWordsTarget += 5
+                            scope.launch { prefs.setNewWordsTarget(newWordsTarget) }
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = "Increase", tint = ChineseRed)
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(12.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Words Learned", style = MaterialTheme.typography.bodyMedium)
+                    Text("${savedLearnedCount.size} words", color = ChineseRed, fontWeight = FontWeight.Bold)
+                }
+                
+                var showWordList by remember { mutableStateOf(false) }
+                TextButton(onClick = { showWordList = true }) {
+                    Text("View Learned List", style = MaterialTheme.typography.labelSmall)
+                }
+
+                if (showWordList) {
+                    AlertDialog(
+                        onDismissRequest = { showWordList = false },
+                        title = { Text("Learned Vocabulary") },
+                        text = {
+                            Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                    Text(
+                                        text = savedLearnedCount.sorted().joinToString("  "),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        lineHeight = 28.sp
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showWordList = false }) { Text("Close") }
+                        }
+                    )
+                }
+                
+                LinearProgressIndicator(
+                    progress = { (savedLearnedCount.size % 100) / 100f },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    color = ChineseRed,
+                    trackColor = ChineseRedLight.copy(alpha = 0.2f)
+                )
+            }
+
             // LLM Backend Section
             SettingsSection(title = "LLM Backend · AI引擎") {
                 Text("Select Provider", style = MaterialTheme.typography.bodySmall, color = ChineseRed)
@@ -184,7 +265,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     }
                 }
                 
-                if (llmProvider == LLMProvider.PRIVATE) {
+                if (llmProvider == LLMProvider.PRIVATE || llmProvider == LLMProvider.AZURE || llmProvider == LLMProvider.AWS_BEDROCK) {
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = customUrl,
@@ -193,7 +274,9 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                             scope.launch { prefs.setCustomBaseUrl(it) }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Base URL (OpenAI compatible)") },
+                        label = { 
+                            Text(if (llmProvider == LLMProvider.AZURE) "Azure Endpoint URL" else "Base URL (OpenAI compatible)") 
+                        },
                         placeholder = { Text("http://localhost:11434/v1/chat/completions") },
                         shape = RoundedCornerShape(12.dp)
                     )
