@@ -45,9 +45,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mandarincoach.app.data.model.DictionaryEntry
 import com.mandarincoach.app.data.model.Message
 import com.mandarincoach.app.data.model.ProficiencyLevel
+import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.data.repository.DictionaryRepository
 import com.mandarincoach.app.service.SpeechRecognitionService
 import com.mandarincoach.app.service.TextToSpeechService
+import kotlinx.coroutines.flow.first
 import com.mandarincoach.app.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) // Add ExperimentalLayoutApi here
@@ -61,6 +63,8 @@ fun ConversationScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val tts = remember { TextToSpeechService(context) }
     val stt = remember { SpeechRecognitionService() }
@@ -90,7 +94,23 @@ fun ConversationScreen(
         }
     }
 
-    LaunchedEffect(level) { viewModel.initialize(level) }
+    LaunchedEffect(level) { 
+        viewModel.initialize(level)
+        
+        // Check if profile is empty and guide the user
+        val prefs = UserPreferences(context)
+        val name = prefs.userName.first()
+        if (name.isBlank()) {
+            val result = snackbarHostState.showSnackbar(
+                message = "Personalize your coach in Settings!",
+                actionLabel = "Go",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                onSettingsClick()
+            }
+        }
+    }
 
     LaunchedEffect(recognizedText) {
         recognizedText?.let { text ->
@@ -120,6 +140,7 @@ fun ConversationScreen(
 
     Scaffold(
         containerColor = BackgroundWarm,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {

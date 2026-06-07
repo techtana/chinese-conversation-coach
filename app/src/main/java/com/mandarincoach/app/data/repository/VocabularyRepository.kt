@@ -107,9 +107,20 @@ object VocabularyRepository {
         ProficiencyLevel.FLUENT -> advancedWords + fluentWords
     }
 
-    fun buildSystemPrompt(level: ProficiencyLevel): String {
+    fun buildSystemPrompt(
+        level: ProficiencyLevel,
+        userName: String = "",
+        learningGoals: String = "",
+        interests: String = ""
+    ): String {
         val vocab = getVocabularyForLevel(level)
         val vocabSample = vocab.take(80).joinToString("、")
+
+        val userContext = buildString {
+            if (userName.isNotBlank()) append("- The student's name is $userName.\n")
+            if (learningGoals.isNotBlank()) append("- Their goals: $learningGoals\n")
+            if (interests.isNotBlank()) append("- Their interests: $interests\n")
+        }
 
         val levelGuidance = when (level) {
             ProficiencyLevel.BEGINNER -> """
@@ -144,6 +155,8 @@ object VocabularyRepository {
         return """
 You are 小明 (Xiǎo Míng), a warm, friendly Mandarin Chinese conversation coach.
 Student level: ${level.englishName} (${level.hanzi})
+
+${if (userContext.isNotBlank()) "Student Profile:\n$userContext" else ""}
 
 Core vocabulary for this level (use these words naturally):
 $vocabSample

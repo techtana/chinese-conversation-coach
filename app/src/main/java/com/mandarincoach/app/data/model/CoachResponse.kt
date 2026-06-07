@@ -26,11 +26,53 @@ data class ClaudeMessage(
 
 @Serializable
 data class ClaudeApiResponse(
-    val content: List<ClaudeContent>
+    val content: List<ClaudeContent>,
+    val usage: ClaudeUsage? = null
+)
+
+@Serializable
+data class ClaudeUsage(
+    val input_tokens: Int = 0,
+    val output_tokens: Int = 0
 )
 
 @Serializable
 data class ClaudeContent(
     val type: String,
     val text: String
+)
+
+@Serializable
+data class OpenAIRequest(
+    val model: String,
+    val messages: List<OpenAIMessage>,
+    val response_format: OpenAIResponseFormat? = null
+)
+
+@Serializable
+data class OpenAIMessage(
+    val role: String,
+    val content: String
+)
+
+@Serializable
+data class OpenAIResponseFormat(
+    val type: String
+)
+
+@Serializable
+data class OpenAIResponse(
+    val choices: List<OpenAIChoice>,
+    val usage: OpenAIUsage? = null
+)
+
+@Serializable
+data class OpenAIChoice(
+    val message: OpenAIMessage
+)
+
+@Serializable
+data class OpenAIUsage(
+    val prompt_tokens: Int,
+    val completion_tokens: Int
 )

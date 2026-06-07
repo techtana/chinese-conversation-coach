@@ -19,13 +19,14 @@ data class ConversationUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val speechSpeed: Float = 0.85f,
-    val showEnglish: Boolean = true
+    val showEnglish: Boolean = true,
+    val totalCost: Float = 0f
 )
 
 class ConversationViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = ClaudeRepository()
     private val prefs = UserPreferences(application)
+    private val repository = ClaudeRepository(prefs)
 
     private val _uiState = MutableStateFlow(ConversationUiState())
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
@@ -42,6 +43,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             prefs.showEnglish.collect { show ->
                 _uiState.value = _uiState.value.copy(showEnglish = show)
+            }
+        }
+        viewModelScope.launch {
+            prefs.totalCost.collect { cost ->
+                _uiState.value = _uiState.value.copy(totalCost = cost)
             }
         }
     }
@@ -84,11 +90,24 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         _uiState.value = _uiState.value.copy(messages = currentMessages, isLoading = true, error = null)
 
         viewModelScope.launch {
+            val name = prefs.userName.first()
+            val goals = prefs.learningGoals.first()
+            val ints = prefs.interests.first()
+            val provider = prefs.llmProvider.first()
+            val cModel = prefs.customModel.first()
+            val cUrl = prefs.customBaseUrl.first()
+
             repository.sendMessage(
                 userInput = text,
                 history = currentMessages.dropLast(1),
                 level = currentLevel,
-                apiKey = apiKey
+                apiKey = apiKey,
+                userName = name,
+                learningGoals = goals,
+                interests = ints,
+                provider = provider,
+                customModel = cModel,
+                customBaseUrl = cUrl
             ).onSuccess { response ->
                 val aiMessage = response.toMessage()
                 _uiState.value = _uiState.value.copy(

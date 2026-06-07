@@ -1,13 +1,14 @@
 package com.mandarincoach.app.service
 
 import android.content.Context
+import android.content.Intent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.Locale
 
-class TextToSpeechService(context: Context) {
+class TextToSpeechService(private val context: Context) {
 
     private var tts: TextToSpeech? = null
     private var isReady = false
@@ -20,19 +21,49 @@ class TextToSpeechService(context: Context) {
     init {
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                val result = tts?.setLanguage(Locale.SIMPLIFIED_CHINESE)
-                isReady = result != TextToSpeech.LANG_MISSING_DATA &&
-                        result != TextToSpeech.LANG_NOT_SUPPORTED
-                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) { _isSpeaking.value = true }
-                    override fun onDone(utteranceId: String?) { _isSpeaking.value = false }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) { _isSpeaking.value = false }
-                })
-                pendingText?.let { speak(it, pendingSpeed) }
-                pendingText = null
+                setupMandarin()
             }
         }
+    }
+
+    private fun setupMandarin() {
+        val locale = Locale.SIMPLIFIED_CHINESE
+        val result = tts?.setLanguage(locale)
+
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            // Trigger system to install Mandarin data
+            triggerLanguageInstall()
+            isReady = false
+        } else {
+            // Success - try to pick a high quality local voice if available
+            try {
+                val bestVoice = tts?.voices?.filter {
+                    it.locale == locale && !it.isNetworkConnectionRequired
+                }?.maxByOrNull { it.quality } ?: tts?.defaultVoice
+
+                bestVoice?.let { tts?.voice = it }
+            } catch (ignore: Exception) {
+                // Fallback to default if voice selection fails
+            }
+
+            isReady = true
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) { _isSpeaking.value = true }
+                override fun onDone(utteranceId: String?) { _isSpeaking.value = false }
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) { _isSpeaking.value = false }
+            })
+
+            pendingText?.let { speak(it, pendingSpeed) }
+            pendingText = null
+        }
+    }
+
+    private fun triggerLanguageInstall() {
+        val installIntent = Intent()
+        installIntent.action = TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA
+        installIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        context.startActivity(installIntent)
     }
 
     fun speak(text: String, speed: Float = 0.85f) {

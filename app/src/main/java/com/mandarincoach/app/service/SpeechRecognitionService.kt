@@ -27,7 +27,13 @@ class SpeechRecognitionService {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageCode)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageCode)
             putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "请说话... Speak now")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "请说话... Speak now\n(App will wait for you to finish)")
+            
+            // Allow for much longer speech and longer pauses
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 5000L) // 5 seconds min
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L) // 3 seconds of silence before ending
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+
             // This triggers the system to offer to download the language if missing
             putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf(languageCode))
         }

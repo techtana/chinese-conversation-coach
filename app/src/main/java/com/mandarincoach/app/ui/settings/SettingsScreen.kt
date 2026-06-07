@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mandarincoach.app.data.model.LLMProvider
 import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.service.TextToSpeechService
 import com.mandarincoach.app.ui.theme.*
@@ -39,10 +40,27 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     val savedApiKey by prefs.apiKey.collectAsState(initial = "")
     val savedSpeed by prefs.speechSpeed.collectAsState(initial = 0.85f)
     val savedShowEnglish by prefs.showEnglish.collectAsState(initial = true)
+    val savedUserName by prefs.userName.collectAsState(initial = "")
+    val savedGoals by prefs.learningGoals.collectAsState(initial = "")
+    val savedInterests by prefs.interests.collectAsState(initial = "")
+    val savedTheme by prefs.themeMode.collectAsState(initial = "system")
+    val savedProvider by prefs.llmProvider.collectAsState(initial = LLMProvider.CLAUDE)
+    val savedCustomModel by prefs.customModel.collectAsState(initial = "")
+    val savedCustomUrl by prefs.customBaseUrl.collectAsState(initial = "")
+    val savedTotalCost by prefs.totalCost.collectAsState(initial = 0f)
 
     var apiKeyInput by remember(savedApiKey) { mutableStateOf(savedApiKey) }
     var speechSpeed by remember(savedSpeed) { mutableFloatStateOf(savedSpeed) }
     var showEnglish by remember(savedShowEnglish) { mutableStateOf(savedShowEnglish) }
+    var userName by remember(savedUserName) { mutableStateOf(savedUserName) }
+    var learningGoals by remember(savedGoals) { mutableStateOf(savedGoals) }
+    var interests by remember(savedInterests) { mutableStateOf(savedInterests) }
+    var themeMode by remember(savedTheme) { mutableStateOf(savedTheme) }
+    
+    var llmProvider by remember(savedProvider) { mutableStateOf(savedProvider) }
+    var customModel by remember(savedCustomModel) { mutableStateOf(savedCustomModel) }
+    var customUrl by remember(savedCustomUrl) { mutableStateOf(savedCustomUrl) }
+
     var showApiKey by remember { mutableStateOf(false) }
     var saveSuccess by remember { mutableStateOf(false) }
 
@@ -70,6 +88,144 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            // Profile Info Section
+            SettingsSection(title = "Profile · 个人资料") {
+                OutlinedTextField(
+                    value = userName,
+                    onValueChange = { 
+                        userName = it
+                        scope.launch { prefs.setUserName(it) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Name / 名字") },
+                    shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = learningGoals,
+                    onValueChange = { 
+                        learningGoals = it
+                        scope.launch { prefs.setLearningGoals(it) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Learning Goals / 学习目标") },
+                    placeholder = { Text("e.g. Travel, Business, HSK 4") },
+                    shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = interests,
+                    onValueChange = { 
+                        interests = it
+                        scope.launch { prefs.setInterests(it) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Interests / 兴趣") },
+                    placeholder = { Text("e.g. Cooking, History, Technology") },
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            // Appearance Section
+            SettingsSection(title = "Appearance · 外观") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Theme Mode", style = MaterialTheme.typography.bodyMedium)
+                    val options = listOf("System", "Light", "Dark")
+                    var expanded by remember { mutableStateOf(false) }
+                    
+                    Box {
+                        TextButton(onClick = { expanded = true }) {
+                            Text(themeMode.replaceFirstChar { it.uppercase() })
+                        }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            options.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option) },
+                                    onClick = {
+                                        themeMode = option.lowercase()
+                                        scope.launch { prefs.setThemeMode(option.lowercase()) }
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // LLM Backend Section
+            SettingsSection(title = "LLM Backend · AI引擎") {
+                Text("Select Provider", style = MaterialTheme.typography.bodySmall, color = ChineseRed)
+                var providerExpanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(
+                        onClick = { providerExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(llmProvider.displayName)
+                    }
+                    DropdownMenu(expanded = providerExpanded, onDismissRequest = { providerExpanded = false }) {
+                        LLMProvider.entries.forEach { provider ->
+                            DropdownMenuItem(
+                                text = { Text(provider.displayName) },
+                                onClick = {
+                                    llmProvider = provider
+                                    scope.launch { prefs.setLlmProvider(provider) }
+                                    providerExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                if (llmProvider == LLMProvider.PRIVATE) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = customUrl,
+                        onValueChange = { 
+                            customUrl = it
+                            scope.launch { prefs.setCustomBaseUrl(it) }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Base URL (OpenAI compatible)") },
+                        placeholder = { Text("http://localhost:11434/v1/chat/completions") },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = customModel,
+                        onValueChange = { 
+                            customModel = it
+                            scope.launch { prefs.setCustomModel(it) }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Model Name") },
+                        placeholder = { Text("llama3") },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Accumulated Cost", style = MaterialTheme.typography.bodyMedium)
+                        Text("$${String.format("%.4f", savedTotalCost)} USD", color = ChineseRed, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = { scope.launch { prefs.resetCost() } }) {
+                        Text("Reset", color = TextSecondary)
+                    }
+                }
+            }
+
             // API Key section
             SettingsSection(title = "Claude API Key") {
                 Text(

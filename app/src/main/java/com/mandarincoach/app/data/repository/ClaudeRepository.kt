@@ -1,11 +1,7 @@
 package com.mandarincoach.app.data.repository
 
-import com.mandarincoach.app.data.model.ClaudeApiRequest
-import com.mandarincoach.app.data.model.ClaudeApiResponse
-import com.mandarincoach.app.data.model.ClaudeMessage
-import com.mandarincoach.app.data.model.CoachResponse
-import com.mandarincoach.app.data.model.Message
-import com.mandarincoach.app.data.model.ProficiencyLevel
+import com.mandarincoach.app.data.model.*
+import com.mandarincoach.app.data.preferences.UserPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -16,7 +12,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-class ClaudeRepository {
+class ClaudeRepository(private val prefs: UserPreferences) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -26,83 +22,117 @@ class ClaudeRepository {
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
-    }
-
-    companion object {
-        private const val API_URL = "https://api.anthropic.com/v1/messages"
-        private const val MODEL = "claude-haiku-4-5-20251001"
-        private const val MAX_TOKENS = 600
-        private const val MAX_HISTORY = 20
+        encodeDefaults = true
     }
 
     suspend fun sendMessage(
         userInput: String,
         history: List<Message>,
         level: ProficiencyLevel,
-        apiKey: String
+        apiKey: String,
+        userName: String = "",
+        learningGoals: String = "",
+        interests: String = "",
+        provider: LLMProvider = LLMProvider.CLAUDE,
+        customModel: String = "",
+        customBaseUrl: String = ""
     ): Result<CoachResponse> = withContext(Dispatchers.IO) {
         runCatching {
-            val systemPrompt = VocabularyRepository.buildSystemPrompt(level)
-
-            val messages = buildMessageHistory(history, userInput)
-
-            val requestBody = ClaudeApiRequest(
-                model = MODEL,
-                max_tokens = MAX_TOKENS,
-                system = systemPrompt,
-                messages = messages
+            val systemPrompt = VocabularyRepository.buildSystemPrompt(
+                level = level,
+                userName = userName,
+                learningGoals = learningGoals,
+                interests = interests
             )
 
-            val body = json.encodeToString(requestBody)
-                .toRequestBody("application/json".toMediaType())
-
-            val request = Request.Builder()
-                .url(API_URL)
-                .post(body)
-                .header("x-api-key", apiKey)
-                .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json")
-                .build()
-
-            val response = client.newCall(request).execute()
-            val responseText = response.body?.string()
-                ?: throw Exception("Empty response from API")
-
-            if (!response.isSuccessful) {
-                val errorMsg = runCatching {
-                    json.parseToJsonElement(responseText)
-                        .let { it.toString() }
-                }.getOrDefault(responseText)
-                throw Exception("API error ${response.code}: $errorMsg")
+            val url = if (provider == LLMProvider.PRIVATE && customBaseUrl.isNotBlank()) {
+                customBaseUrl
+            } else {
+                provider.baseUrl
             }
 
-            val apiResponse = json.decodeFromString<ClaudeApiResponse>(responseText)
-            val rawText = apiResponse.content.firstOrNull()?.text
-                ?: throw Exception("No content in response")
+            val model = if (customModel.isNotBlank()) customModel else provider.defaultModel
 
-            parseCoachResponse(rawText)
+            val request = if (provider == LLMProvider.CLAUDE) {
+                buildClaudeRequest(url, apiKey, model, systemPrompt, history, userInput)
+            } else {
+                buildOpenAICompatibleRequest(url, apiKey, model, systemPrompt, history, userInput)
+            }
+
+            val response = client.newCall(request).execute()
+            val responseText = response.body?.string() ?: throw Exception("Empty response")
+
+            if (!response.isSuccessful) {
+                throw Exception("API error ${response.code}: $responseText")
+            }
+
+            if (provider == LLMProvider.CLAUDE) {
+                val apiResponse = json.decodeFromString<ClaudeApiResponse>(responseText)
+                apiResponse.usage?.let {
+                    val cost = (it.input_tokens * provider.inputCostPerMillion + 
+                               it.output_tokens * provider.outputCostPerMillion) / 1_000_000.0
+                    prefs.addCost(cost)
+                }
+                val rawText = apiResponse.content.firstOrNull()?.text ?: throw Exception("No content")
+                parseCoachResponse(rawText)
+            } else {
+                val apiResponse = json.decodeFromString<OpenAIResponse>(responseText)
+                apiResponse.usage?.let {
+                    val cost = (it.prompt_tokens * provider.inputCostPerMillion + 
+                               it.completion_tokens * provider.outputCostPerMillion) / 1_000_000.0
+                    prefs.addCost(cost)
+                }
+                val rawText = apiResponse.choices.firstOrNull()?.message?.content ?: throw Exception("No content")
+                parseCoachResponse(rawText)
+            }
         }
     }
 
-    private fun buildMessageHistory(history: List<Message>, newInput: String): List<ClaudeMessage> {
-        val recent = history.takeLast(MAX_HISTORY)
-        val messages = mutableListOf<ClaudeMessage>()
+    private fun buildClaudeRequest(
+        url: String, 
+        apiKey: String, 
+        model: String, 
+        system: String, 
+        history: List<Message>, 
+        userInput: String
+    ): Request {
+        val messages = history.takeLast(20).map { msg ->
+            ClaudeMessage(role = if (msg.isUser) "user" else "assistant", content = msg.hanzi)
+        } + ClaudeMessage(role = "user", content = userInput)
 
-        for (msg in recent) {
-            if (msg.isUser) {
-                messages.add(ClaudeMessage(role = "user", content = msg.hanzi))
-            } else {
-                val assistantJson = buildString {
-                    append("""{"hanzi":"${msg.hanzi}","pinyin":"${msg.pinyin}","english":"${msg.english}"""")
-                    if (msg.tip != null) append(""","tip":"${msg.tip}"""")
-                    append("}")
-                }
-                messages.add(ClaudeMessage(role = "assistant", content = assistantJson))
-            }
-        }
+        val body = json.encodeToString(ClaudeApiRequest(model, 600, system, messages))
+            .toRequestBody("application/json".toMediaType())
 
-        messages.add(ClaudeMessage(role = "user", content = newInput))
-        return messages
+        return Request.Builder()
+            .url(url)
+            .post(body)
+            .header("x-api-key", apiKey)
+            .header("anthropic-version", "2023-06-01")
+            .build()
+    }
+
+    private fun buildOpenAICompatibleRequest(
+        url: String, 
+        apiKey: String, 
+        model: String, 
+        system: String, 
+        history: List<Message>, 
+        userInput: String
+    ): Request {
+        val messages = mutableListOf(OpenAIMessage("system", system))
+        messages.addAll(history.takeLast(20).map { msg ->
+            OpenAIMessage(if (msg.isUser) "user" else "assistant", msg.hanzi)
+        })
+        messages.add(OpenAIMessage("user", userInput))
+
+        val body = json.encodeToString(OpenAIRequest(model, messages))
+            .toRequestBody("application/json".toMediaType())
+
+        return Request.Builder()
+            .url(url)
+            .post(body)
+            .header("Authorization", "Bearer $apiKey")
+            .build()
     }
 
     private fun parseCoachResponse(raw: String): CoachResponse {
