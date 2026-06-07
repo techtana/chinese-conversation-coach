@@ -72,7 +72,7 @@ class LLMRepository(private val prefs: UserPreferences) {
             val responseText = response.body?.string() ?: throw Exception("Empty response")
 
             if (!response.isSuccessful) {
-                throw Exception("API error ${response.code}: $responseText")
+                throw Exception("API Error ${response.code}\nURL: ${request.url}\nModel: $model\nResponse: $responseText")
             }
 
             if (provider == LLMProvider.CLAUDE) {
@@ -117,6 +117,7 @@ class LLMRepository(private val prefs: UserPreferences) {
             .post(body)
             .header("x-api-key", apiKey)
             .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
             .build()
     }
 
