@@ -1,12 +1,31 @@
+# Build artifacts
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# IDE Settings
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-*.keystore
-!debug.keystore
+*.iws
+*.ipr
+out/
+
+# Local configuration
 local.properties
+
+# Secrets and Signing
+*.keystore
+*.jks
+!debug.keystore
+google-services.json
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+captures/
+*.log
+.externalNativeBuild/
+.cxx/
