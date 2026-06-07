@@ -27,6 +27,7 @@ import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.service.TextToSpeechService
 import com.mandarincoach.app.ui.theme.*
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -218,7 +219,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 ) {
                     Column {
                         Text("Accumulated Cost", style = MaterialTheme.typography.bodyMedium)
-                        Text("$${String.format("%.4f", savedTotalCost)} USD", color = ChineseRed, fontWeight = FontWeight.Bold)
+                        Text("$${String.format(Locale.US, "%.4f", savedTotalCost)} USD", color = ChineseRed, fontWeight = FontWeight.Bold)
                     }
                     TextButton(onClick = { scope.launch { prefs.resetCost() } }) {
                         Text("Reset", color = TextSecondary)
