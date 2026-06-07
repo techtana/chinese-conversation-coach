@@ -2,11 +2,7 @@ package com.mandarincoach.app.data.preferences
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.mandarincoach.app.data.model.LLMProvider
 import com.mandarincoach.app.data.model.ProficiencyLevel
@@ -18,29 +14,33 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class UserPreferences(private val context: Context) {
 
     companion object {
-        private val API_KEY = stringPreferencesKey("api_key")
+        private val API_KEY_CLAUDE = stringPreferencesKey("api_key_claude")
+        private val API_KEY_OPENAI = stringPreferencesKey("api_key_openai")
+        private val API_KEY_DEEPSEEK = stringPreferencesKey("api_key_deepseek")
+        private val API_KEY_GOOGLE = stringPreferencesKey("api_key_google")
+        private val API_KEY_DEEPINFRA = stringPreferencesKey("api_key_deepinfra")
+        private val API_KEY_AZURE = stringPreferencesKey("api_key_azure")
+        private val API_KEY_AWS = stringPreferencesKey("api_key_aws")
+        private val API_KEY_PRIVATE = stringPreferencesKey("api_key_private")
+        
+        // Legacy Key for migration
+        private val API_KEY_LEGACY = stringPreferencesKey("api_key")
+
         private val PROFICIENCY_LEVEL = stringPreferencesKey("proficiency_level")
         private val SPEECH_SPEED = floatPreferencesKey("speech_speed")
         private val SHOW_ENGLISH = stringPreferencesKey("show_english")
-        
-        // New Profile & Personalization Keys
         private val USER_NAME = stringPreferencesKey("user_name")
         private val LEARNING_GOALS = stringPreferencesKey("learning_goals")
         private val INTERESTS = stringPreferencesKey("interests")
-        private val THEME_MODE = stringPreferencesKey("theme_mode") // "system", "light", "dark"
-        
-        // LLM Backend Keys
+        private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val LLM_PROVIDER = stringPreferencesKey("llm_provider")
         private val CUSTOM_MODEL = stringPreferencesKey("custom_model")
         private val CUSTOM_BASE_URL = stringPreferencesKey("custom_base_url")
         private val TOTAL_COST = floatPreferencesKey("total_cost")
-        
-        // Vocabulary Progress Keys
         private val LEARNED_WORDS = stringPreferencesKey("learned_words")
         private val NEW_WORDS_TARGET = intPreferencesKey("new_words_target")
     }
 
-    val apiKey: Flow<String> = context.dataStore.data.map { it[API_KEY] ?: "" }
     val userName: Flow<String> = context.dataStore.data.map { it[USER_NAME] ?: "" }
     val learningGoals: Flow<String> = context.dataStore.data.map { it[LEARNING_GOALS] ?: "" }
     val interests: Flow<String> = context.dataStore.data.map { it[INTERESTS] ?: "" }
@@ -72,8 +72,40 @@ class UserPreferences(private val context: Context) {
         (it[SHOW_ENGLISH] ?: "true") == "true"
     }
 
-    suspend fun setApiKey(key: String) {
-        context.dataStore.edit { it[API_KEY] = key }
+    fun getApiKeyForProvider(provider: LLMProvider): Flow<String> = context.dataStore.data.map { prefs ->
+        val providerKey = when (provider) {
+            LLMProvider.CLAUDE -> prefs[API_KEY_CLAUDE]
+            LLMProvider.OPENAI -> prefs[API_KEY_OPENAI]
+            LLMProvider.DEEPSEEK -> prefs[API_KEY_DEEPSEEK]
+            LLMProvider.GOOGLE -> prefs[API_KEY_GOOGLE]
+            LLMProvider.DEEPINFRA -> prefs[API_KEY_DEEPINFRA]
+            LLMProvider.AZURE -> prefs[API_KEY_AZURE]
+            LLMProvider.AWS_BEDROCK -> prefs[API_KEY_AWS]
+            LLMProvider.PRIVATE -> prefs[API_KEY_PRIVATE]
+        }
+        
+        // Fallback to legacy key if provider key is missing and provider is Claude
+        if (providerKey.isNullOrBlank() && provider == LLMProvider.CLAUDE) {
+            prefs[API_KEY_LEGACY] ?: ""
+        } else {
+            providerKey ?: ""
+        }
+    }
+
+    suspend fun setApiKeyForProvider(provider: LLMProvider, key: String) {
+        context.dataStore.edit { prefs ->
+            val keyPath = when (provider) {
+                LLMProvider.CLAUDE -> API_KEY_CLAUDE
+                LLMProvider.OPENAI -> API_KEY_OPENAI
+                LLMProvider.DEEPSEEK -> API_KEY_DEEPSEEK
+                LLMProvider.GOOGLE -> API_KEY_GOOGLE
+                LLMProvider.DEEPINFRA -> API_KEY_DEEPINFRA
+                LLMProvider.AZURE -> API_KEY_AZURE
+                LLMProvider.AWS_BEDROCK -> API_KEY_AWS
+                LLMProvider.PRIVATE -> API_KEY_PRIVATE
+            }
+            prefs[keyPath] = key
+        }
     }
 
     suspend fun setUserName(name: String) {

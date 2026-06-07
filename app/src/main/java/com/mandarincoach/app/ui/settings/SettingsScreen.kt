@@ -40,7 +40,6 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val tts = remember { TextToSpeechService(context) }
 
-    val savedApiKey by prefs.apiKey.collectAsState(initial = "")
     val savedSpeed by prefs.speechSpeed.collectAsState(initial = 0.85f)
     val savedShowEnglish by prefs.showEnglish.collectAsState(initial = true)
     val savedUserName by prefs.userName.collectAsState(initial = "")
@@ -48,11 +47,14 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     val savedInterests by prefs.interests.collectAsState(initial = "")
     val savedTheme by prefs.themeMode.collectAsState(initial = "system")
     val savedProvider by prefs.llmProvider.collectAsState(initial = LLMProvider.CLAUDE)
+    
+    val currentApiKey by prefs.getApiKeyForProvider(savedProvider).collectAsState(initial = "")
+
     val savedCustomModel by prefs.customModel.collectAsState(initial = "")
     val savedCustomUrl by prefs.customBaseUrl.collectAsState(initial = "")
     val savedTotalCost by prefs.totalCost.collectAsState(initial = 0f)
 
-    var apiKeyInput by remember(savedApiKey) { mutableStateOf(savedApiKey) }
+    var apiKeyInput by remember(currentApiKey) { mutableStateOf(currentApiKey) }
     var speechSpeed by remember(savedSpeed) { mutableFloatStateOf(savedSpeed) }
     var showEnglish by remember(savedShowEnglish) { mutableStateOf(savedShowEnglish) }
     var userName by remember(savedUserName) { mutableStateOf(savedUserName) }
@@ -311,9 +313,9 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
             }
 
             // API Key section
-            SettingsSection(title = "Claude API Key") {
+            SettingsSection(title = "API Key · 密钥") {
                 Text(
-                    text = "Get your free API key at console.anthropic.com",
+                    text = "Configure API Key for ${llmProvider.displayName}",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
@@ -323,7 +325,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     onValueChange = { apiKeyInput = it; saveSuccess = false },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("API Key") },
-                    placeholder = { Text("sk-ant-api03-…", color = TextHint) },
+                    placeholder = { Text("Enter your key here...", color = TextHint) },
                     visualTransformation = if (showApiKey) VisualTransformation.None
                     else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -347,7 +349,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     Button(
                         onClick = {
                             scope.launch {
-                                prefs.setApiKey(apiKeyInput.trim())
+                                prefs.setApiKeyForProvider(llmProvider, apiKeyInput.trim())
                                 saveSuccess = true
                             }
                         },

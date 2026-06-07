@@ -2,6 +2,7 @@ package com.mandarincoach.app.ui.conversation
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -52,7 +53,7 @@ import com.mandarincoach.app.service.TextToSpeechService
 import kotlinx.coroutines.flow.first
 import com.mandarincoach.app.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) // Add ExperimentalLayoutApi here
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ConversationScreen(
     level: ProficiencyLevel,
@@ -60,6 +61,7 @@ fun ConversationScreen(
     onSettingsClick: () -> Unit,
     viewModel: ConversationViewModel = viewModel()
 ) {
+    Log.d("ConversationScreen", "Entering screen for level: $level")
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current

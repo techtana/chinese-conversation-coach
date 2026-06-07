@@ -1,6 +1,7 @@
 package com.mandarincoach.app.ui.conversation
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mandarincoach.app.data.model.CoachResponse
@@ -25,6 +26,10 @@ data class ConversationUiState(
 )
 
 class ConversationViewModel(application: Application) : AndroidViewModel(application) {
+
+    init {
+        Log.d("ConversationVM", "ViewModel Instance Created")
+    }
 
     private val prefs = UserPreferences(application)
     private val repository = LLMRepository(prefs)
@@ -54,12 +59,16 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun initialize(level: ProficiencyLevel) {
+        Log.d("ConversationVM", "Initializing for level: $level")
         currentLevel = level
         viewModelScope.launch {
-            apiKey = prefs.apiKey.first()
+            val provider = prefs.llmProvider.first()
+            apiKey = prefs.getApiKeyForProvider(provider).first()
+            Log.d("ConversationVM", "Using provider: ${provider.name}, Key length: ${apiKey.length}")
+
             if (apiKey.isBlank()) {
                 _uiState.value = _uiState.value.copy(
-                    error = "Please add your Claude API key in Settings to start chatting."
+                    error = "Please add your API key for ${provider.displayName} in Settings."
                 )
                 return@launch
             }
@@ -79,22 +88,25 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
-        if (apiKey.isBlank()) {
-            _uiState.value = _uiState.value.copy(
-                error = "Please add your Claude API key in Settings."
-            )
-            return
-        }
-
+        
         val userMessage = Message(isUser = true, hanzi = text)
         val currentMessages = _uiState.value.messages + userMessage
         _uiState.value = _uiState.value.copy(messages = currentMessages, isLoading = true, error = null)
 
         viewModelScope.launch {
+            val provider = prefs.llmProvider.first()
+            apiKey = prefs.getApiKeyForProvider(provider).first()
+            
+            if (apiKey.isBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    error = "Please add your API key for ${provider.displayName} in Settings.",
+                    isLoading = false
+                )
+                return@launch
+            }
             val name = prefs.userName.first()
             val goals = prefs.learningGoals.first()
             val ints = prefs.interests.first()
-            val provider = prefs.llmProvider.first()
             val cModel = prefs.customModel.first()
             val cUrl = prefs.customBaseUrl.first()
             val learned = prefs.learnedWords.first()
