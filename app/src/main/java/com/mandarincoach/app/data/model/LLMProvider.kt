@@ -12,7 +12,7 @@ enum class LLMProvider(
 ) {
     CLAUDE(
         "Anthropic Claude",
-        "claude-3-haiku-20240307",
+        "claude-3-5-haiku-20241022",
         "https://api.anthropic.com/v1/messages",
         0.25,
         1.25
@@ -54,7 +54,7 @@ enum class LLMProvider(
     ),
     AWS_BEDROCK(
         "AWS Bedrock (via Gateway)",
-        "anthropic.claude-3-haiku",
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
         "", // Requires custom gateway
         0.25,
         1.25
