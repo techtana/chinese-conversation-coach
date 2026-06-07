@@ -54,7 +54,7 @@ class LLMRepository(private val prefs: UserPreferences) {
                 activeVocab = activeVocab
             )
 
-            val url = if (provider == LLMProvider.PRIVATE && customBaseUrl.isNotBlank()) {
+            val url = if (provider.baseUrl.isBlank() || (provider == LLMProvider.PRIVATE && customBaseUrl.isNotBlank())) {
                 customBaseUrl
             } else {
                 provider.baseUrl

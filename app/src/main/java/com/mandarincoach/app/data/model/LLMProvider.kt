@@ -12,7 +12,7 @@ enum class LLMProvider(
 ) {
     CLAUDE(
         "Anthropic Claude",
-        "claude-3-5-haiku-20241022",
+        "claude-3-haiku-20240307",
         "https://api.anthropic.com/v1/messages",
         0.25,
         1.25

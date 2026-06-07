@@ -277,7 +277,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                         label = { 
                             Text(if (llmProvider == LLMProvider.AZURE) "Azure Endpoint URL" else "Base URL (OpenAI compatible)") 
                         },
-                        placeholder = { Text("http://localhost:11434/v1/chat/completions") },
+                        placeholder = { Text(llmProvider.baseUrl.ifBlank { "https://..." }) },
                         shape = RoundedCornerShape(12.dp)
                     )
                     Spacer(Modifier.height(12.dp))
@@ -288,8 +288,8 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                             scope.launch { prefs.setCustomModel(it) }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Model Name") },
-                        placeholder = { Text("llama3") },
+                        label = { Text("Model Name (Optional)") },
+                        placeholder = { Text("Default: ${llmProvider.defaultModel}") },
                         shape = RoundedCornerShape(12.dp)
                     )
                 }
