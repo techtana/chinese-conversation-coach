@@ -6,7 +6,7 @@ import com.mandarincoach.app.data.preferences.UserPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -36,6 +36,8 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
         interests: String = "",
         learnedWords: Set<String> = emptySet(),
         newWordsTarget: Int = 30,
+        conversationSummary: String = "",
+        learningProfile: String = "",
         provider: LLMProvider = LLMProvider.CLAUDE,
         customModel: String = "",
         customBaseUrl: String = "",
@@ -59,6 +61,8 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
                 learningGoals = learningGoals,
                 interests = interests,
                 activeVocab = activeVocab,
+                conversationSummary = conversationSummary,
+                learningProfile = learningProfile,
                 stage = stage,
                 scenario = scenario,
                 earnedItems = earnedItems,
@@ -172,6 +176,72 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
             ChoiceOption(hanzi = parsed.hanzi, pinyin = parsed.pinyin, english = word)
         }
     }
+
+    /**
+     * Summarizes the conversation into two parts:
+     * 1. A learning profile (words learned, grammar revisited).
+     * 2. A conversation summary (context for future interactions).
+     */
+    suspend fun summarizeSession(
+        messages: List<Message>,
+        apiKey: String,
+        provider: LLMProvider = LLMProvider.CLAUDE,
+        customModel: String = "",
+        customBaseUrl: String = ""
+    ): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (messages.isEmpty()) return@runCatching "" to ""
+
+            val historyText = messages.joinToString("\n") { 
+                "${if (it.isUser) "Student" else "Coach"}: ${it.hanzi}"
+            }
+
+            val systemPrompt = """
+                You are a Mandarin learning assistant. Summarize the provided Chinese conversation history.
+                Respond ONLY with a JSON object containing:
+                - "conversationSummary": A 2-3 sentence summary of what was discussed, so future coaches remember the context.
+                - "learningSummary": A brief list of words or concepts the student learned or practiced.
+                Structure: {"conversationSummary": "...", "learningSummary": "..."}
+            """.trimIndent()
+
+            val url = when {
+                provider == LLMProvider.CLAUDE -> LLMProvider.CLAUDE.baseUrl
+                provider == LLMProvider.PRIVATE && customBaseUrl.isNotBlank() -> customBaseUrl
+                provider.baseUrl.isNotBlank() -> provider.baseUrl
+                else -> customBaseUrl
+            }
+            val model = if (customModel.trim().isNotBlank()) customModel.trim() else provider.defaultModel
+
+            val request = if (provider == LLMProvider.CLAUDE) {
+                buildClaudeRequest(url, apiKey, model, systemPrompt, emptyList(), historyText, 500)
+            } else {
+                buildOpenAICompatibleRequest(url, apiKey, model, systemPrompt, emptyList(), historyText)
+            }
+
+            val response = client.newCall(request).execute()
+            val responseText = response.body?.string() ?: throw Exception("Empty response")
+            if (!response.isSuccessful) throw Exception("API Error ${response.code}")
+
+            val rawText = if (provider == LLMProvider.CLAUDE) {
+                json.decodeFromString<ClaudeApiResponse>(responseText).content.firstOrNull()?.text
+            } else {
+                json.decodeFromString<OpenAIResponse>(responseText).choices.firstOrNull()?.message?.content
+            } ?: throw Exception("No content")
+
+            // Minimal JSON parsing for the summary
+            val summaryJson = json.parseToJsonElement(rawText).asJsonObject
+            val convSummary = summaryJson["conversationSummary"]?.asString ?: ""
+            val learnSummary = summaryJson["learningSummary"]?.asString ?: ""
+            
+            convSummary to learnSummary
+        }
+    }
+
+    private val JsonElement.asJsonObject: JsonObject
+        get() = this as JsonObject
+    
+    private val JsonElement.asString: String
+        get() = (this as? JsonPrimitive)?.content ?: ""
 
     private fun buildClaudeRequest(
         url: String,

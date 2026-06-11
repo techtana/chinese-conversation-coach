@@ -43,6 +43,12 @@ class UserPreferences(private val context: Context) {
         private val BRIDGE_STAGE = stringPreferencesKey("bridge_stage")
         private val BRIDGE_STAGE_MANUAL = stringPreferencesKey("bridge_stage_manual")
         private val STAGE_QUALIFYING_SESSIONS = stringPreferencesKey("stage_qualifying_sessions")
+        
+        private val SESSION_TIMEOUT_HOURS = intPreferencesKey("session_timeout_hours")
+        private val LAST_INTERACTION_TIME = longPreferencesKey("last_interaction_time")
+        private val CURRENT_SESSION_ID = stringPreferencesKey("current_session_id")
+        private val CONVERSATION_SUMMARY = stringPreferencesKey("conversation_summary")
+        private val LEARNING_PROFILE_SUMMARY = stringPreferencesKey("learning_profile_summary")
     }
 
     val userName: Flow<String> = context.dataStore.data.map { it[USER_NAME] ?: "" }
@@ -89,6 +95,12 @@ class UserPreferences(private val context: Context) {
     val showEnglish: Flow<Boolean> = context.dataStore.data.map {
         (it[SHOW_ENGLISH] ?: "true") == "true"
     }
+
+    val sessionTimeoutHours: Flow<Int> = context.dataStore.data.map { it[SESSION_TIMEOUT_HOURS] ?: 6 }
+    val lastInteractionTime: Flow<Long> = context.dataStore.data.map { it[LAST_INTERACTION_TIME] ?: 0L }
+    val currentSessionId: Flow<String> = context.dataStore.data.map { it[CURRENT_SESSION_ID] ?: "" }
+    val conversationSummary: Flow<String> = context.dataStore.data.map { it[CONVERSATION_SUMMARY] ?: "" }
+    val learningProfileSummary: Flow<String> = context.dataStore.data.map { it[LEARNING_PROFILE_SUMMARY] ?: "" }
 
     fun getApiKeyForProvider(provider: LLMProvider): Flow<String> = context.dataStore.data.map { prefs ->
         val providerKey = when (provider) {
@@ -187,6 +199,26 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setShowEnglish(show: Boolean) {
         context.dataStore.edit { it[SHOW_ENGLISH] = show.toString() }
+    }
+
+    suspend fun setSessionTimeoutHours(hours: Int) {
+        context.dataStore.edit { it[SESSION_TIMEOUT_HOURS] = hours }
+    }
+
+    suspend fun setLastInteractionTime(time: Long) {
+        context.dataStore.edit { it[LAST_INTERACTION_TIME] = time }
+    }
+
+    suspend fun setCurrentSessionId(id: String) {
+        context.dataStore.edit { it[CURRENT_SESSION_ID] = id }
+    }
+
+    suspend fun setConversationSummary(summary: String) {
+        context.dataStore.edit { it[CONVERSATION_SUMMARY] = summary }
+    }
+
+    suspend fun setLearningProfileSummary(summary: String) {
+        context.dataStore.edit { it[LEARNING_PROFILE_SUMMARY] = summary }
     }
 
     suspend fun setBridgeStage(stage: BridgeStage) {

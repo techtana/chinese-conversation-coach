@@ -143,12 +143,16 @@ object VocabularyRepository {
         userName: String = "",
         learningGoals: String = "",
         interests: String = "",
-        activeVocab: List<String> = emptyList()
+        activeVocab: List<String> = emptyList(),
+        conversationSummary: String = "",
+        learningProfile: String = ""
     ): String = PromptBuilder.build(
         level = level,
         userName = userName,
         learningGoals = learningGoals,
         interests = interests,
-        activeVocab = activeVocab
+        activeVocab = activeVocab,
+        conversationSummary = conversationSummary,
+        learningProfile = learningProfile
     )
 }

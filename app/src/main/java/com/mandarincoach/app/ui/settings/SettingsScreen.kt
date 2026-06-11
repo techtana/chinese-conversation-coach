@@ -1,5 +1,7 @@
 package com.mandarincoach.app.ui.settings
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -27,9 +30,16 @@ import androidx.compose.ui.unit.sp
 import com.mandarincoach.app.data.model.BridgeStage
 import com.mandarincoach.app.data.model.LLMProvider
 import com.mandarincoach.app.data.preferences.UserPreferences
+import com.mandarincoach.app.data.repository.ConversationRepository
 import com.mandarincoach.app.service.TextToSpeechService
 import com.mandarincoach.app.ui.theme.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -38,6 +48,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(onNavigateBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { UserPreferences(context) }
+    val convRepo = remember { ConversationRepository(context) }
     val scope = rememberCoroutineScope()
     val tts = remember { TextToSpeechService(context) }
 
@@ -54,6 +65,9 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     val savedCustomModel by prefs.customModel.collectAsState(initial = "")
     val savedCustomUrl by prefs.customBaseUrl.collectAsState(initial = "")
     val savedTotalCost by prefs.totalCost.collectAsState(initial = 0f)
+
+    val savedTimeout by prefs.sessionTimeoutHours.collectAsState(initial = 6)
+    var sessionTimeout by remember(savedTimeout) { mutableIntStateOf(savedTimeout) }
 
     var apiKeyInput by remember(currentApiKey) { mutableStateOf(currentApiKey) }
     var speechSpeed by remember(savedSpeed) { mutableFloatStateOf(savedSpeed) }
@@ -482,6 +496,61 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 }
             }
 
+            // Data Management Section
+            SettingsSection(title = "Data Management · 数据管理") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Session Persistence", style = MaterialTheme.typography.bodyMedium)
+                        Text("New session after: $sessionTimeout hours", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
+                            if (sessionTimeout > 1) {
+                                sessionTimeout--
+                                scope.launch { prefs.setSessionTimeoutHours(sessionTimeout) }
+                            }
+                        }) {
+                            Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = ChineseRed)
+                        }
+                        Text(sessionTimeout.toString(), fontWeight = FontWeight.Bold)
+                        IconButton(onClick = {
+                            sessionTimeout++
+                            scope.launch { prefs.setSessionTimeoutHours(sessionTimeout) }
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = "Increase", tint = ChineseRed)
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val data = exportAllData(prefs, convRepo)
+                            val sendIntent: Intent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, data)
+                                type = "text/plain"
+                            }
+                            val shareIntent = Intent.createChooser(sendIntent, "Download My Data")
+                            context.startActivity(shareIntent)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = ChineseRed),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Download My Data")
+                }
+            }
+
             // About section
             SettingsSection(title = "About · 关于") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -516,6 +585,38 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+private suspend fun exportAllData(prefs: UserPreferences, convRepo: ConversationRepository): String {
+    val json = Json { prettyPrint = true }
+    
+    val profile = buildJsonObject {
+        put("userName", prefs.userName.first())
+        put("learningGoals", prefs.learningGoals.first())
+        put("interests", prefs.interests.first())
+        put("conversationSummary", prefs.conversationSummary.first())
+        put("learningProfileSummary", prefs.learningProfileSummary.first())
+        put("learnedWordsCount", prefs.learnedWords.first().size)
+    }
+    
+    val currentMessages = convRepo.currentMessages.first()
+    val archivedSessions = convRepo.allSessions.first()
+    
+    val root = buildJsonObject {
+        put("profile", profile)
+        putJsonArray("currentSession") {
+            currentMessages.forEach { msg ->
+                add(Json.encodeToJsonElement(com.mandarincoach.app.data.model.Message.serializer(), msg))
+            }
+        }
+        putJsonArray("archivedSessions") {
+            archivedSessions.forEach { session ->
+                add(Json.encodeToJsonElement(com.mandarincoach.app.data.repository.SessionArchive.serializer(), session))
+            }
+        }
+    }
+    
+    return json.encodeToString(root)
 }
 
 @Composable

@@ -17,6 +17,8 @@ object PromptBuilder {
         learningGoals: String = "",
         interests: String = "",
         activeVocab: List<String> = emptyList(),
+        conversationSummary: String = "",
+        learningProfile: String = "",
         stage: BridgeStage = BridgeStage.FREE_FLOW,
         scenario: Scenario? = null,
         earnedItems: Set<String> = emptySet(),
@@ -24,7 +26,7 @@ object PromptBuilder {
     ): String {
         val sections = listOf(
             if (scenario != null) scenarioPersonaBlock(level, scenario) else personaBlock(level),
-            userContextBlock(userName, learningGoals, interests),
+            userContextBlock(userName, learningGoals, interests, conversationSummary, learningProfile),
             vocabBlock(level, activeVocab),
             levelGuidanceBlock(level),
             stageBlock(stage),
@@ -42,11 +44,23 @@ object PromptBuilder {
         Student level: ${level.englishName} (${level.hanzi})
     """.trimIndent()
 
-    private fun userContextBlock(userName: String, learningGoals: String, interests: String): String {
+    private fun userContextBlock(
+        userName: String,
+        learningGoals: String,
+        interests: String,
+        conversationSummary: String,
+        learningProfile: String
+    ): String {
         val userContext = buildString {
             if (userName.isNotBlank()) append("- The student's name is $userName.\n")
             if (learningGoals.isNotBlank()) append("- Their goals: $learningGoals\n")
             if (interests.isNotBlank()) append("- Their interests: $interests\n")
+            if (conversationSummary.isNotBlank()) {
+                append("- Context from previous sessions: $conversationSummary\n")
+            }
+            if (learningProfile.isNotBlank()) {
+                append("- Learning progress summary: $learningProfile\n")
+            }
         }
         return if (userContext.isBlank()) "" else "Student Profile:\n$userContext".trimEnd()
     }

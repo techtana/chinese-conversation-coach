@@ -13,6 +13,7 @@ import com.mandarincoach.app.data.model.Scenario
 import com.mandarincoach.app.data.model.ScenarioItem
 import com.mandarincoach.app.data.preferences.ProgressRepository
 import com.mandarincoach.app.data.preferences.UserPreferences
+import com.mandarincoach.app.data.repository.ConversationRepository
 import com.mandarincoach.app.data.repository.DictionaryRepository
 import com.mandarincoach.app.data.repository.LLMRepository
 import com.mandarincoach.app.data.repository.ScenarioRepository
@@ -21,6 +22,7 @@ import com.mandarincoach.app.domain.CurveballProvider
 import com.mandarincoach.app.domain.SignalTracker
 import com.mandarincoach.app.domain.StageProgressionEngine
 import java.time.LocalDate
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,6 +57,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     private val prefs = UserPreferences(application)
     private val progressRepo = ProgressRepository(application)
     private val repository = LLMRepository(prefs)
+    private val convRepo = ConversationRepository(application)
 
     private val _uiState = MutableStateFlow(ConversationUiState())
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
@@ -92,6 +95,30 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         val scenario = scenarioId?.let { ScenarioRepository.byId(it) }
         _uiState.value = _uiState.value.copy(scenario = scenario)
         viewModelScope.launch {
+            // Check session timeout
+            val lastTime = prefs.lastInteractionTime.first()
+            val timeoutHours = prefs.sessionTimeoutHours.first()
+            val currentTime = System.currentTimeMillis()
+            val sessionId = prefs.currentSessionId.first()
+
+            if (sessionId.isBlank() || (lastTime > 0 && currentTime - lastTime > timeoutHours * 3600 * 1000)) {
+                // Session expired or new user; archive the old one if it has messages
+                val oldMessages = convRepo.currentMessages.first()
+                if (oldMessages.isNotEmpty() && sessionId.isNotBlank()) {
+                    summarizeAndArchiveSession(sessionId, oldMessages)
+                }
+                
+                // Start new session
+                val newSessionId = UUID.randomUUID().toString()
+                prefs.setCurrentSessionId(newSessionId)
+                convRepo.clearCurrentMessages()
+                _uiState.value = _uiState.value.copy(messages = emptyList())
+            } else {
+                // Load existing session
+                val savedMessages = convRepo.currentMessages.first()
+                _uiState.value = _uiState.value.copy(messages = savedMessages)
+            }
+
             // The bridge only applies to beginners; follow stage changes
             // (e.g. manual override in settings) for the rest of the session.
             if (level == ProficiencyLevel.BEGINNER) {
@@ -121,13 +148,40 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
             // First session of the day opens with a surprise challenge
             // (skipped inside missions, which have their own opening beat)
-            if (scenario == null) {
+            if (scenario == null && _uiState.value.messages.isEmpty()) {
                 val lastDay = progressRepo.lastCurveballEpochDay.first()
                 pendingCurveball = CurveballProvider.curveball(LocalDate.now(), lastDay)
                 if (pendingCurveball != null) progressRepo.markCurveballShown(LocalDate.now())
             }
 
-            sendGreeting()
+            if (_uiState.value.messages.isEmpty()) {
+                sendGreeting()
+            }
+        }
+    }
+
+    private suspend fun summarizeAndArchiveSession(sessionId: String, messages: List<Message>) {
+        val provider = prefs.llmProvider.first()
+        val key = prefs.getApiKeyForProvider(provider).first()
+        if (key.isBlank()) return
+
+        repository.summarizeSession(
+            messages = messages,
+            apiKey = key,
+            provider = provider,
+            customModel = prefs.customModel.first(),
+            customBaseUrl = prefs.customBaseUrl.first()
+        ).onSuccess { (convSummary, learnSummary) ->
+            // Update global profile
+            val currentConv = prefs.conversationSummary.first()
+            val currentLearn = prefs.learningProfileSummary.first()
+            
+            // Append or merge summaries (simple append for now)
+            prefs.setConversationSummary((currentConv + "\n" + convSummary).trim())
+            prefs.setLearningProfileSummary((currentLearn + "\n" + learnSummary).trim())
+            
+            // Archive full session
+            convRepo.archiveSession(sessionId, convSummary, learnSummary, messages)
         }
     }
 
@@ -172,6 +226,10 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         )
 
         viewModelScope.launch {
+            // Update last interaction time
+            prefs.setLastInteractionTime(System.currentTimeMillis())
+            convRepo.saveMessages(currentMessages)
+
             val provider = prefs.llmProvider.first()
             apiKey = prefs.getApiKeyForProvider(provider).first()
             
@@ -189,6 +247,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             val cUrl = prefs.customBaseUrl.first()
             val learned = prefs.learnedWords.first()
             val target = prefs.newWordsTarget.first()
+            val convSummary = prefs.conversationSummary.first()
+            val learnProfile = prefs.learningProfileSummary.first()
 
             repository.sendMessage(
                 userInput = text,
@@ -200,6 +260,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 interests = ints,
                 learnedWords = learned,
                 newWordsTarget = target,
+                conversationSummary = convSummary,
+                learningProfile = learnProfile,
                 provider = provider,
                 customModel = cModel,
                 customBaseUrl = cUrl,
@@ -215,14 +277,16 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 val aiMessage = response.toMessage()
+                val updatedMessages = currentMessages + aiMessage
                 // Null choices/wordBank in stage 1/2 means the model skipped
                 // them — the UI falls back to free input for this turn.
                 _uiState.value = _uiState.value.copy(
-                    messages = currentMessages + aiMessage,
+                    messages = updatedMessages,
                     isLoading = false,
                     pendingChoices = response.choices?.shuffled(),
                     pendingWordBank = response.wordBank
                 )
+                convRepo.saveMessages(updatedMessages)
                 aiMessageShownAt = System.currentTimeMillis()
                 val scenarioCompleted = handleScenarioEvent(response)
                 onUserTurnCompleted(scenarioCompleted)
@@ -252,7 +316,10 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             scenarioMood = null,
             showScenarioComplete = false
         )
-        if (apiKey.isNotBlank()) sendGreeting()
+        viewModelScope.launch { 
+            convRepo.clearCurrentMessages()
+            if (apiKey.isNotBlank()) sendGreeting()
+        }
     }
 
     /**
