@@ -23,3 +23,11 @@ data class WeekAggregate(
 ) {
     val averageMs: Long get() = if (count == 0) 0 else sumMs / count
 }
+
+/** Weekly self-correction / hesitation signals for the adaptive engine. */
+@Serializable
+data class HesitationAggregate(
+    val editChurn: Int = 0,
+    val sttRestarts: Int = 0,
+    val turns: Int = 0
+)

@@ -36,7 +36,10 @@ import com.mandarincoach.app.data.model.StreakState
 import com.mandarincoach.app.data.preferences.ProgressRepository
 import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.data.repository.ScenarioRepository
+import com.mandarincoach.app.domain.ContentModeSelector
 import com.mandarincoach.app.ui.theme.*
+import java.time.LocalDate
+import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -194,11 +197,25 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(12.dp))
 
+            // 80% the next sensible mission, 20% a surprise — stable per day
+            val suggestedId = remember(completions, storedLevel) {
+                ContentModeSelector.suggestScenario(
+                    scenarios = ScenarioRepository.scenarios,
+                    completedIds = completions.keys,
+                    userLevel = storedLevel,
+                    random = Random(LocalDate.now().toEpochDay())
+                )
+            }
+            val orderedScenarios = remember(suggestedId) {
+                ScenarioRepository.scenarios.sortedByDescending { it.id == suggestedId }
+            }
+
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(ScenarioRepository.scenarios, key = { it.id }) { scenario ->
+                items(orderedScenarios, key = { it.id }) { scenario ->
                     ScenarioCard(
                         scenario = scenario,
                         completed = scenario.id in completions,
+                        suggested = scenario.id == suggestedId,
                         onClick = { onScenarioSelected(storedLevel, scenario.id) }
                     )
                 }
@@ -228,6 +245,7 @@ fun HomeScreen(
 private fun ScenarioCard(
     scenario: Scenario,
     completed: Boolean,
+    suggested: Boolean,
     onClick: () -> Unit
 ) {
     Card(
@@ -243,6 +261,16 @@ private fun ScenarioCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(text = scenario.emoji, fontSize = 26.sp)
                 Spacer(Modifier.weight(1f))
+                if (suggested && !completed) {
+                    Surface(color = ChineseRed.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
+                        Text(
+                            text = "Suggested today",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ChineseRed,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 if (completed) {
                     Surface(color = GoldAccent.copy(alpha = 0.2f), shape = RoundedCornerShape(6.dp)) {
                         Text(

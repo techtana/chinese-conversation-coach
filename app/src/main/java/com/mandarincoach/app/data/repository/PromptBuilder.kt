@@ -19,7 +19,8 @@ object PromptBuilder {
         activeVocab: List<String> = emptyList(),
         stage: BridgeStage = BridgeStage.FREE_FLOW,
         scenario: Scenario? = null,
-        earnedItems: Set<String> = emptySet()
+        earnedItems: Set<String> = emptySet(),
+        curveball: String? = null
     ): String {
         val sections = listOf(
             if (scenario != null) scenarioPersonaBlock(level, scenario) else personaBlock(level),
@@ -28,6 +29,7 @@ object PromptBuilder {
             levelGuidanceBlock(level),
             stageBlock(stage),
             scenarioBlock(scenario, earnedItems),
+            curveballBlock(curveball),
             jsonContractBlock(stage, scenario != null),
             rulesBlock()
         ).filter { it.isNotBlank() }
@@ -145,6 +147,15 @@ object PromptBuilder {
             - Set "scenario": {"mood": "..."} each message to one of: happy, neutral, confused, annoyed, impressed — your character's current reaction.
             - Only after ALL items are earned and the scene reaches a natural close, set "scenario": {"completed": true}.
             - Language notes go ONLY in the "correction" field (as the coach stepping in quietly), never in your in-character reply.
+        """.trimIndent()
+    }
+
+    private fun curveballBlock(curveball: String?): String {
+        if (curveball == null) return ""
+        return """
+            SESSION OPENER — THE CURVEBALL:
+            Instead of a normal greeting, open this conversation with a short, urgent, playful surprise challenge based on this brief: $curveball
+            Keep it to 1-2 sentences in Mandarin, matched to the student's level. After the student responds (well or badly), resolve the moment with good humor and continue into normal conversation.
         """.trimIndent()
     }
 

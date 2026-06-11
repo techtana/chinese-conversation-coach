@@ -41,7 +41,8 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
         customBaseUrl: String = "",
         stage: BridgeStage = BridgeStage.FREE_FLOW,
         scenario: Scenario? = null,
-        earnedItems: Set<String> = emptySet()
+        earnedItems: Set<String> = emptySet(),
+        curveball: String? = null
     ): Result<CoachResponse> = withContext(Dispatchers.IO) {
         runCatching {
             Log.d("LLMRepository", "Starting sendMessage for provider: ${provider.name}")
@@ -60,7 +61,8 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
                 activeVocab = activeVocab,
                 stage = stage,
                 scenario = scenario,
-                earnedItems = earnedItems
+                earnedItems = earnedItems,
+                curveball = curveball
             )
 
             // Choice lists, word banks and scenario events consume extra output tokens

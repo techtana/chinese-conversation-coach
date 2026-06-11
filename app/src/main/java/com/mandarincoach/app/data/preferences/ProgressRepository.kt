@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mandarincoach.app.data.model.CompletionRecord
+import com.mandarincoach.app.data.model.HesitationAggregate
 import com.mandarincoach.app.data.model.StreakState
 import com.mandarincoach.app.data.model.WeekAggregate
 import com.mandarincoach.app.domain.LatencyStats
@@ -32,6 +34,8 @@ class ProgressRepository(private val context: Context) {
         private val EARNED_ITEMS = stringPreferencesKey("earned_items")
         private val STREAK_STATE = stringPreferencesKey("streak_state")
         private val LATENCY_WEEKLY = stringPreferencesKey("latency_weekly")
+        private val HESITATION_WEEKLY = stringPreferencesKey("hesitation_weekly")
+        private val CURVEBALL_EPOCH_DAY = longPreferencesKey("curveball_epoch_day")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -98,6 +102,35 @@ class ProgressRepository(private val context: Context) {
                 prefs[LATENCY_WEEKLY] = json.encodeToString(updated)
             }
         }
+    }
+
+    /** weekKey → self-correction / hesitation signals */
+    val hesitationWeekly: Flow<Map<String, HesitationAggregate>> = context.progressStore.data.map { prefs ->
+        decode(prefs[HESITATION_WEEKLY], emptyMap())
+    }
+
+    suspend fun addHesitationSample(editChurn: Int, sttRestarts: Int, today: LocalDate = LocalDate.now()) {
+        if (editChurn == 0 && sttRestarts == 0) return
+        context.progressStore.edit { prefs ->
+            val current: Map<String, HesitationAggregate> = decode(prefs[HESITATION_WEEKLY], emptyMap())
+            val key = LatencyStats.weekKey(today)
+            val agg = current[key] ?: HesitationAggregate()
+            prefs[HESITATION_WEEKLY] = json.encodeToString(
+                current + (key to HesitationAggregate(
+                    editChurn = agg.editChurn + editChurn,
+                    sttRestarts = agg.sttRestarts + sttRestarts,
+                    turns = agg.turns + 1
+                ))
+            )
+        }
+    }
+
+    val lastCurveballEpochDay: Flow<Long> = context.progressStore.data.map { prefs ->
+        prefs[CURVEBALL_EPOCH_DAY] ?: 0L
+    }
+
+    suspend fun markCurveballShown(today: LocalDate = LocalDate.now()) {
+        context.progressStore.edit { it[CURVEBALL_EPOCH_DAY] = today.toEpochDay() }
     }
 
     private inline fun <reified T> decode(raw: String?, default: T): T =

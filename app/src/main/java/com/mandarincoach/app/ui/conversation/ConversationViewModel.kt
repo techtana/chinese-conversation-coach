@@ -17,7 +17,10 @@ import com.mandarincoach.app.data.repository.DictionaryRepository
 import com.mandarincoach.app.data.repository.LLMRepository
 import com.mandarincoach.app.data.repository.ScenarioRepository
 import com.mandarincoach.app.data.repository.VocabularyRepository
+import com.mandarincoach.app.domain.CurveballProvider
+import com.mandarincoach.app.domain.SignalTracker
 import com.mandarincoach.app.domain.StageProgressionEngine
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,6 +65,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     private var userTurnCount = 0
     private var qualifiedThisConversation = false
     private var aiMessageShownAt: Long? = null
+    private var pendingCurveball: String? = null
+    private val signalTracker = SignalTracker()
 
     init {
         viewModelScope.launch {
@@ -113,6 +118,15 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 )
                 return@launch
             }
+
+            // First session of the day opens with a surprise challenge
+            // (skipped inside missions, which have their own opening beat)
+            if (scenario == null) {
+                val lastDay = progressRepo.lastCurveballEpochDay.first()
+                pendingCurveball = CurveballProvider.curveball(LocalDate.now(), lastDay)
+                if (pendingCurveball != null) progressRepo.markCurveballShown(LocalDate.now())
+            }
+
             sendGreeting()
         }
     }
@@ -139,6 +153,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             viewModelScope.launch {
                 progressRepo.addLatencySample(System.currentTimeMillis() - shownAt)
             }
+        }
+
+        // Self-correction / hesitation signals for the adaptive engine
+        val signals = signalTracker.snapshotAndReset()
+        viewModelScope.launch {
+            progressRepo.addHesitationSample(signals.editChurn, signals.sttRestarts)
         }
 
         val userMessage = Message(isUser = true, hanzi = text)
@@ -185,7 +205,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 customBaseUrl = cUrl,
                 stage = currentStage,
                 scenario = _uiState.value.scenario,
-                earnedItems = _uiState.value.earnedItems.map { it.id }.toSet()
+                earnedItems = _uiState.value.earnedItems.map { it.id }.toSet(),
+                curveball = pendingCurveball.also { pendingCurveball = null }
             ).onSuccess { response ->
                 // Auto-learn words used by the AI
                 viewModelScope.launch {
@@ -336,6 +357,14 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     fun clearAssistTranslation() {
         _uiState.value = _uiState.value.copy(assistTranslation = null)
     }
+
+    // ── Adaptive-engine signal hooks (called from the UI) ────────────────────
+
+    fun onDraftChanged(text: String) = signalTracker.onDraftChanged(text)
+
+    fun onMicTap() = signalTracker.onMicTap()
+
+    fun onSttResult() = signalTracker.onSttSend()
 
     private fun CoachResponse.toMessage() = Message(
         isUser = false,

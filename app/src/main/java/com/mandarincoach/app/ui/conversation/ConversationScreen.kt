@@ -125,6 +125,7 @@ fun ConversationScreen(
     LaunchedEffect(recognizedText) {
         recognizedText?.let { text ->
             if (text.isNotBlank()) {
+                viewModel.onSttResult()
                 viewModel.sendMessage(text)
                 stt.clearRecognizedText()
             }
@@ -189,6 +190,7 @@ fun ConversationScreen(
             }
             val onMicClick = {
                 focusManager.clearFocus()
+                viewModel.onMicTap()
                 val hasPerm = ContextCompat.checkSelfPermission(
                     context, Manifest.permission.RECORD_AUDIO
                 ) == PackageManager.PERMISSION_GRANTED
@@ -197,6 +199,10 @@ fun ConversationScreen(
                 } else {
                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
+            }
+            val onDraftChange = { value: String ->
+                inputText = value
+                viewModel.onDraftChanged(value)
             }
 
             // Each bridge stage gets its own input surface; if the model
@@ -221,7 +227,7 @@ fun ConversationScreen(
                 uiState.inputMode == BridgeStage.SCAFFOLDED ->
                     ScaffoldedInputBar(
                         text = inputText,
-                        onTextChange = { inputText = it },
+                        onTextChange = onDraftChange,
                         isListening = isListening,
                         isLoading = uiState.isLoading,
                         isTranslating = uiState.isTranslating,
@@ -235,7 +241,7 @@ fun ConversationScreen(
                 else ->
                     FreeInputBar(
                         text = inputText,
-                        onTextChange = { inputText = it },
+                        onTextChange = onDraftChange,
                         isListening = isListening,
                         isLoading = uiState.isLoading,
                         onSend = onSend,
