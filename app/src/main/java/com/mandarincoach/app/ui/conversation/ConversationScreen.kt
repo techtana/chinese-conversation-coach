@@ -71,6 +71,7 @@ fun ConversationScreen(
 ) {
     Log.d("ConversationScreen", "Entering screen for level: $level")
     val context = LocalContext.current
+    val prefs = remember { UserPreferences(context) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
@@ -96,11 +97,14 @@ fun ConversationScreen(
         stt.handleActivityResult(result.resultCode, result.data)
     }
 
+    val micAutoTranscribe by prefs.micAutoTranscribe.collectAsState(initial = true)
+    val sttSilenceMs by prefs.sttSilenceMs.collectAsState(initial = 3000L)
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            sttLauncher.launch(stt.createRecognizerIntent())
+            sttLauncher.launch(stt.createRecognizerIntent("zh-CN", micAutoTranscribe, sttSilenceMs))
         }
     }
 
@@ -108,7 +112,6 @@ fun ConversationScreen(
         viewModel.initialize(level, scenarioId)
         
         // Check if profile is empty and guide the user
-        val prefs = UserPreferences(context)
         val name = prefs.userName.first()
         if (name.isBlank()) {
             val result = snackbarHostState.showSnackbar(
@@ -195,7 +198,7 @@ fun ConversationScreen(
                     context, Manifest.permission.RECORD_AUDIO
                 ) == PackageManager.PERMISSION_GRANTED
                 if (hasPerm) {
-                    sttLauncher.launch(stt.createRecognizerIntent())
+                    sttLauncher.launch(stt.createRecognizerIntent("zh-CN", micAutoTranscribe, sttSilenceMs))
                 } else {
                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }

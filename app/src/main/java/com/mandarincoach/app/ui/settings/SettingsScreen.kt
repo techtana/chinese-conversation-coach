@@ -69,6 +69,11 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     val savedTimeout by prefs.sessionTimeoutHours.collectAsState(initial = 6)
     var sessionTimeout by remember(savedTimeout) { mutableIntStateOf(savedTimeout) }
 
+    val savedMicAuto by prefs.micAutoTranscribe.collectAsState(initial = true)
+    val savedSttSilence by prefs.sttSilenceMs.collectAsState(initial = 3000L)
+    var micAutoTranscribe by remember(savedMicAuto) { mutableStateOf(savedMicAuto) }
+    var sttSilenceMs by remember(savedSttSilence) { mutableLongStateOf(savedSttSilence) }
+
     var apiKeyInput by remember(currentApiKey) { mutableStateOf(currentApiKey) }
     var speechSpeed by remember(savedSpeed) { mutableFloatStateOf(savedSpeed) }
     var showEnglish by remember(savedShowEnglish) { mutableStateOf(savedShowEnglish) }
@@ -492,6 +497,55 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                             scope.launch { prefs.setShowEnglish(it) }
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = ChineseRed, checkedTrackColor = ChineseRedLight.copy(alpha = 0.4f))
+                    )
+                }
+            }
+
+            // Microphone Section
+            SettingsSection(title = "Microphone · 麦克风") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Auto-transcribe", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (micAutoTranscribe) "Finishes automatically after silence"
+                            else "Wait for manual completion",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                    Switch(
+                        checked = micAutoTranscribe,
+                        onCheckedChange = {
+                            micAutoTranscribe = it
+                            scope.launch { prefs.setMicAutoTranscribe(it) }
+                        },
+                        colors = SwitchDefaults.colors(checkedThumbColor = ChineseRed, checkedTrackColor = ChineseRedLight.copy(alpha = 0.4f))
+                    )
+                }
+                
+                if (micAutoTranscribe) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Silence Duration: ${sttSilenceMs / 1000f}s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ChineseRed
+                    )
+                    Slider(
+                        value = sttSilenceMs.toFloat(),
+                        onValueChange = { sttSilenceMs = it.toLong() },
+                        onValueChangeFinished = {
+                            scope.launch { prefs.setSttSilenceMs(sttSilenceMs) }
+                        },
+                        valueRange = 1000f..10000f,
+                        steps = 17, // 0.5s increments from 1s to 10s
+                        colors = SliderDefaults.colors(
+                            thumbColor = ChineseRed,
+                            activeTrackColor = ChineseRed
+                        )
                     )
                 }
             }

@@ -21,18 +21,37 @@ class SpeechRecognitionService {
      * Triggers the native Google voice-to-text dialog.
      * Use this via ActivityResultLauncher in the UI layer.
      */
-    fun createRecognizerIntent(languageCode: String = "zh-CN"): Intent {
+    fun createRecognizerIntent(
+        languageCode: String = "zh-CN",
+        autoTranscribe: Boolean = true,
+        silenceMs: Long = 3000L
+    ): Intent {
         return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageCode)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageCode)
             putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "请说话... Speak now\n(App will wait for you to finish)")
             
-            // Allow for much longer speech and longer pauses
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 5000L) // 5 seconds min
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L) // 3 seconds of silence before ending
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+            val prompt = if (autoTranscribe) {
+                "请说话... Speak now\n(App will auto-complete after silence)"
+            } else {
+                "请说话... Speak now\n(Tap the mic when finished)"
+            }
+            putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
+            
+            if (autoTranscribe) {
+                // Configurable silence duration
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
+            } else {
+                // Set silence to a very large value to effectively "wait for user"
+                // 10 minutes of silence
+                val infiniteSilence = 600000L
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, infiniteSilence)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, infiniteSilence)
+            }
+            
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1000L)
 
             // This triggers the system to offer to download the language if missing
             putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf(languageCode))

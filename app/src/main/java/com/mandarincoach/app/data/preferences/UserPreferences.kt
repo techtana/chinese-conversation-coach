@@ -49,6 +49,9 @@ class UserPreferences(private val context: Context) {
         private val CURRENT_SESSION_ID = stringPreferencesKey("current_session_id")
         private val CONVERSATION_SUMMARY = stringPreferencesKey("conversation_summary")
         private val LEARNING_PROFILE_SUMMARY = stringPreferencesKey("learning_profile_summary")
+
+        private val MIC_AUTO_TRANSCRIBE = booleanPreferencesKey("mic_auto_transcribe")
+        private val STT_SILENCE_MS = longPreferencesKey("stt_silence_ms")
     }
 
     val userName: Flow<String> = context.dataStore.data.map { it[USER_NAME] ?: "" }
@@ -101,6 +104,9 @@ class UserPreferences(private val context: Context) {
     val currentSessionId: Flow<String> = context.dataStore.data.map { it[CURRENT_SESSION_ID] ?: "" }
     val conversationSummary: Flow<String> = context.dataStore.data.map { it[CONVERSATION_SUMMARY] ?: "" }
     val learningProfileSummary: Flow<String> = context.dataStore.data.map { it[LEARNING_PROFILE_SUMMARY] ?: "" }
+
+    val micAutoTranscribe: Flow<Boolean> = context.dataStore.data.map { it[MIC_AUTO_TRANSCRIBE] ?: true }
+    val sttSilenceMs: Flow<Long> = context.dataStore.data.map { it[STT_SILENCE_MS] ?: 3000L }
 
     fun getApiKeyForProvider(provider: LLMProvider): Flow<String> = context.dataStore.data.map { prefs ->
         val providerKey = when (provider) {
@@ -219,6 +225,14 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setLearningProfileSummary(summary: String) {
         context.dataStore.edit { it[LEARNING_PROFILE_SUMMARY] = summary }
+    }
+
+    suspend fun setMicAutoTranscribe(auto: Boolean) {
+        context.dataStore.edit { it[MIC_AUTO_TRANSCRIBE] = auto }
+    }
+
+    suspend fun setSttSilenceMs(ms: Long) {
+        context.dataStore.edit { it[STT_SILENCE_MS] = ms }
     }
 
     suspend fun setBridgeStage(stage: BridgeStage) {
