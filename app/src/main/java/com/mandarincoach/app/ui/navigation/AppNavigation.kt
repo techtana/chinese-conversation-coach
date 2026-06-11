@@ -9,12 +9,14 @@ import androidx.navigation.navArgument
 import com.mandarincoach.app.data.model.ProficiencyLevel
 import com.mandarincoach.app.ui.conversation.ConversationScreen
 import com.mandarincoach.app.ui.home.HomeScreen
+import com.mandarincoach.app.ui.passport.PassportScreen
 import com.mandarincoach.app.ui.settings.SettingsScreen
 
 object Routes {
     const val HOME = "home"
     const val CONVERSATION = "conversation/{level}?scenario={scenario}"
     const val SETTINGS = "settings"
+    const val PASSPORT = "passport"
     fun conversation(level: ProficiencyLevel, scenarioId: String? = null) =
         "conversation/${level.name}" + (scenarioId?.let { "?scenario=$it" } ?: "")
 }
@@ -32,6 +34,7 @@ fun AppNavigation() {
                 onScenarioSelected = { level, scenarioId ->
                     navController.navigate(Routes.conversation(level, scenarioId))
                 },
+                onPassportClick = { navController.navigate(Routes.PASSPORT) },
                 onSettingsClick = { navController.navigate(Routes.SETTINGS) }
             )
         }
@@ -60,6 +63,10 @@ fun AppNavigation() {
 
         composable(Routes.SETTINGS) {
             SettingsScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.PASSPORT) {
+            PassportScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }

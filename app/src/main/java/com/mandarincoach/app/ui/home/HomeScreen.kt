@@ -10,12 +10,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mandarincoach.app.data.model.ProficiencyLevel
 import com.mandarincoach.app.data.model.Scenario
+import com.mandarincoach.app.data.model.StreakState
 import com.mandarincoach.app.data.preferences.ProgressRepository
 import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.data.repository.ScenarioRepository
@@ -38,6 +43,7 @@ import com.mandarincoach.app.ui.theme.*
 fun HomeScreen(
     onLevelSelected: (ProficiencyLevel) -> Unit,
     onScenarioSelected: (ProficiencyLevel, String) -> Unit,
+    onPassportClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -46,13 +52,31 @@ fun HomeScreen(
     val progressRepo = remember { ProgressRepository(context) }
     val storedLevel by prefs.proficiencyLevel.collectAsState(initial = ProficiencyLevel.BEGINNER)
     val completions by progressRepo.scenarioCompletions.collectAsState(initial = emptyMap())
+    val streak by progressRepo.streakState.collectAsState(initial = StreakState())
+
+    // Mark today active; a broken streak earns a witty nudge, not a guilt-trip
+    var streakNudge by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        streakNudge = progressRepo.updateStreak()
+    }
     Scaffold(
         containerColor = BackgroundWarm,
         topBar = {
             TopAppBar(
-                title = {},
+                title = {
+                    if (streak.currentStreak > 0) {
+                        Text(
+                            text = "🔥 ${streak.currentStreak}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextSecondary
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BackgroundWarm),
                 actions = {
+                    IconButton(onClick = onPassportClick) {
+                        Icon(Icons.Default.WorkspacePremium, contentDescription = "Fluency Passport", tint = TextSecondary)
+                    }
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextSecondary)
                     }
@@ -94,7 +118,33 @@ fun HomeScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(48.dp))
+            // Streak-break nudge
+            streakNudge?.let { nudge ->
+                Spacer(Modifier.height(20.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+                    shape = RoundedCornerShape(14.dp),
+                    elevation = CardDefaults.cardElevation(1.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = nudge,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { streakNudge = null }) {
+                            Text("OK", color = ChineseRed)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(if (streakNudge != null) 20.dp else 48.dp))
 
             Text(
                 text = "Choose your level",

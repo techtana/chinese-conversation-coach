@@ -61,6 +61,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     private var currentStage: BridgeStage = BridgeStage.FREE_FLOW
     private var userTurnCount = 0
     private var qualifiedThisConversation = false
+    private var aiMessageShownAt: Long? = null
 
     init {
         viewModelScope.launch {
@@ -131,6 +132,15 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 
+        // Response latency: time from the coach's message landing to the
+        // learner's reply (outliers discarded downstream)
+        aiMessageShownAt?.let { shownAt ->
+            aiMessageShownAt = null
+            viewModelScope.launch {
+                progressRepo.addLatencySample(System.currentTimeMillis() - shownAt)
+            }
+        }
+
         val userMessage = Message(isUser = true, hanzi = text)
         val currentMessages = _uiState.value.messages + userMessage
         _uiState.value = _uiState.value.copy(
@@ -192,6 +202,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                     pendingChoices = response.choices?.shuffled(),
                     pendingWordBank = response.wordBank
                 )
+                aiMessageShownAt = System.currentTimeMillis()
                 val scenarioCompleted = handleScenarioEvent(response)
                 onUserTurnCompleted(scenarioCompleted)
             }.onFailure { error ->
