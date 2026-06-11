@@ -9,5 +9,6 @@ data class Message(
     val pinyin: String = "",
     val english: String = "",
     val tip: String? = null,
+    val correction: Correction? = null,
     val timestamp: Long = System.currentTimeMillis()
 )

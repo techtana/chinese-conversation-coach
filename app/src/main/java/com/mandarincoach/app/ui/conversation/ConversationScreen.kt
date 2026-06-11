@@ -357,6 +357,31 @@ private fun AiMessageRow(
                     )
                 }
 
+                if (message.correction != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        color = SurfaceGray,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(
+                                text = "✏️ You said 「${message.correction.userSaid}」 · locals say 「${message.correction.better}」",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                            if (message.correction.note.isNotBlank()) {
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = message.correction.note,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextHint,
+                                    fontStyle = FontStyle.Italic
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (message.tip != null) {
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.Top) {

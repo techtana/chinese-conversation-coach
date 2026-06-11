@@ -38,24 +38,32 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
         newWordsTarget: Int = 30,
         provider: LLMProvider = LLMProvider.CLAUDE,
         customModel: String = "",
-        customBaseUrl: String = ""
+        customBaseUrl: String = "",
+        stage: BridgeStage = BridgeStage.FREE_FLOW
     ): Result<CoachResponse> = withContext(Dispatchers.IO) {
         runCatching {
             Log.d("LLMRepository", "Starting sendMessage for provider: ${provider.name}")
-            
+
             val activeVocab = VocabularyRepository.getActiveVocabulary(
                 level = level,
                 learnedWords = learnedWords,
                 newWordsTarget = newWordsTarget
             )
 
-            val systemPrompt = VocabularyRepository.buildSystemPrompt(
+            val systemPrompt = PromptBuilder.build(
                 level = level,
                 userName = userName,
                 learningGoals = learningGoals,
                 interests = interests,
-                activeVocab = activeVocab
+                activeVocab = activeVocab,
+                stage = stage
             )
+
+            // Choice lists and word banks consume extra output tokens
+            val maxTokens = when (stage) {
+                BridgeStage.PASSIVE_INPUT, BridgeStage.FRAGMENT_BUILDING -> 1000
+                else -> 600
+            }
 
             val url = when {
                 provider == LLMProvider.CLAUDE -> LLMProvider.CLAUDE.baseUrl
@@ -70,7 +78,7 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
             Log.d("LLMRepository", "Using Model: $model")
 
             val request = if (provider == LLMProvider.CLAUDE) {
-                buildClaudeRequest(url, apiKey, model, systemPrompt, history, userInput)
+                buildClaudeRequest(url, apiKey, model, systemPrompt, history, userInput, maxTokens)
             } else {
                 buildOpenAICompatibleRequest(url, apiKey, model, systemPrompt, history, userInput)
             }
@@ -97,7 +105,7 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
                     prefs?.addCost(cost)
                 }
                 val rawText = apiResponse.content.firstOrNull()?.text ?: throw Exception("No content")
-                parseCoachResponse(rawText)
+                CoachResponseParser.parse(rawText)
             } else {
                 val apiResponse = json.decodeFromString<OpenAIResponse>(responseText)
                 apiResponse.usage?.let {
@@ -106,24 +114,25 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
                     prefs?.addCost(cost)
                 }
                 val rawText = apiResponse.choices.firstOrNull()?.message?.content ?: throw Exception("No content")
-                parseCoachResponse(rawText)
+                CoachResponseParser.parse(rawText)
             }
         }
     }
 
     private fun buildClaudeRequest(
-        url: String, 
-        apiKey: String, 
-        model: String, 
-        system: String, 
-        history: List<Message>, 
-        userInput: String
+        url: String,
+        apiKey: String,
+        model: String,
+        system: String,
+        history: List<Message>,
+        userInput: String,
+        maxTokens: Int
     ): Request {
         val messages = history.takeLast(20).map { msg ->
             ClaudeMessage(role = if (msg.isUser) "user" else "assistant", content = msg.hanzi)
         } + ClaudeMessage(role = "user", content = userInput)
 
-        val body = json.encodeToString(ClaudeApiRequest(model, 600, system, messages))
+        val body = json.encodeToString(ClaudeApiRequest(model, maxTokens, system, messages))
             .toRequestBody("application/json".toMediaType())
 
         return Request.Builder()
@@ -160,26 +169,4 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
             .build()
     }
 
-    private fun parseCoachResponse(raw: String): CoachResponse {
-        val cleaned = raw.trim()
-            .removePrefix("```json").removePrefix("```")
-            .removeSuffix("```").trim()
-
-        return runCatching {
-            json.decodeFromString<CoachResponse>(cleaned)
-        }.getOrElse {
-            val hanzi = extractField(cleaned, "hanzi") ?: cleaned
-            val pinyin = extractField(cleaned, "pinyin") ?: ""
-            val english = extractField(cleaned, "english") ?: ""
-            val tip = extractField(cleaned, "tip")
-            CoachResponse(hanzi = hanzi, pinyin = pinyin, english = english, tip = tip)
-        }
-    }
-
-    private fun extractField(json: String, field: String): String? {
-        val pattern = """"$field"\s*:\s*"([^"]*(?:\\.[^"]*)*)"""".toRegex()
-        return pattern.find(json)?.groupValues?.getOrNull(1)
-            ?.replace("\\\"", "\"")
-            ?.replace("\\n", "\n")
-    }
 }

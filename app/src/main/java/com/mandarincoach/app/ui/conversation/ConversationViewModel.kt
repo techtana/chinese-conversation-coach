@@ -161,6 +161,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         hanzi = hanzi,
         pinyin = pinyin,
         english = english,
-        tip = tip
+        tip = tip,
+        correction = correction
     )
 }

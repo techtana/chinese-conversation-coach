@@ -3,11 +3,37 @@ package com.mandarincoach.app.data.model
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class ChoiceOption(
+    val hanzi: String,
+    val pinyin: String = "",
+    val english: String = ""
+)
+
+@Serializable
+data class Correction(
+    val userSaid: String,
+    val better: String,
+    val note: String = ""
+)
+
+@Serializable
+data class ScenarioEvent(
+    val itemEarned: String? = null,
+    val mood: String? = null,
+    val completed: Boolean = false
+)
+
+@Serializable
 data class CoachResponse(
     val hanzi: String,
     val pinyin: String,
     val english: String,
-    val tip: String? = null
+    val tip: String? = null,
+    val choices: List<ChoiceOption>? = null,
+    val wordBank: List<String>? = null,
+    val expectedAnswer: String? = null,
+    val correction: Correction? = null,
+    val scenario: ScenarioEvent? = null
 )
 
 @Serializable

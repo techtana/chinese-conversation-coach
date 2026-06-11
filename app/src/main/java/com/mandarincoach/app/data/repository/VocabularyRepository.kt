@@ -144,78 +144,11 @@ object VocabularyRepository {
         learningGoals: String = "",
         interests: String = "",
         activeVocab: List<String> = emptyList()
-    ): String {
-        val vocabSample = if (activeVocab.isNotEmpty()) {
-            activeVocab.joinToString("、")
-        } else {
-            getVocabularyForLevel(level).take(80).joinToString("、")
-        }
-
-        val userContext = buildString {
-            if (userName.isNotBlank()) append("- The student's name is $userName.\n")
-            if (learningGoals.isNotBlank()) append("- Their goals: $learningGoals\n")
-            if (interests.isNotBlank()) append("- Their interests: $interests\n")
-        }
-
-        val levelGuidance = when (level) {
-            ProficiencyLevel.BEGINNER -> """
-                - Use ONLY simple, common words. Short sentences (under 10 characters).
-                - Always include a helpful "tip" field explaining a word or grammar point.
-                - Speak slowly and clearly in your word choices.
-                - Use lots of encouragement. If the user makes an error, gently correct it.
-            """.trimIndent()
-
-            ProficiencyLevel.INTERMEDIATE -> """
-                - Use natural everyday language. Medium-length sentences.
-                - Mix core vocabulary with some new words in context.
-                - Include a "tip" occasionally (1 in 3 messages) for interesting points.
-                - Gently correct grammar mistakes by modeling the correct form.
-            """.trimIndent()
-
-            ProficiencyLevel.ADVANCED -> """
-                - Use rich vocabulary including 成语 (chéngyǔ) and formal expressions.
-                - Complex sentences with subordinate clauses are welcome.
-                - Discuss culture, current events, abstract ideas.
-                - Only include "tip" for particularly interesting idioms or cultural notes.
-            """.trimIndent()
-
-            ProficiencyLevel.FLUENT -> """
-                - Speak like a native: colloquial, nuanced, sometimes humorous.
-                - Use slang, regional expressions, internet vocabulary naturally.
-                - Explore philosophy, literature, social commentary.
-                - Omit "tip" unless the user specifically asks for explanation.
-            """.trimIndent()
-        }
-
-        return """
-You are 小明 (Xiǎo Míng), a warm, friendly Mandarin Chinese conversation coach.
-Student level: ${level.englishName} (${level.hanzi})
-
-${if (userContext.isNotBlank()) "Student Profile:\n$userContext" else ""}
-
-Core vocabulary for this level (STRICTLY LIMIT yourself to these words + basic particles like 的, 了, 吧):
-$vocabSample
-
-IMPORTANT: If you need to use a word NOT in the list above to make a natural sentence, you MUST explain it in the "tip" field.
-
-Level-specific guidelines:
-$levelGuidance
-
-CRITICAL: Always respond ONLY with valid JSON in this exact structure:
-{
-  "hanzi": "Chinese characters here",
-  "pinyin": "Pīnyīn with tone marks here",
-  "english": "English translation here",
-  "tip": "Optional short tip (omit field if not needed)"
-}
-
-Rules:
-1. Keep conversations natural and flowing — ask follow-up questions.
-2. Match your vocabulary complexity strictly to the student's level.
-3. Always use correct tone marks in pinyin (ā á ǎ à, ē é ě è, etc.).
-4. If the user writes in English, respond in Mandarin (they're practicing).
-5. Be warm, patient, and encouraging — celebrate progress!
-6. Never break from the JSON format. Never add text outside the JSON.
-        """.trimIndent()
-    }
+    ): String = PromptBuilder.build(
+        level = level,
+        userName = userName,
+        learningGoals = learningGoals,
+        interests = interests,
+        activeVocab = activeVocab
+    )
 }
