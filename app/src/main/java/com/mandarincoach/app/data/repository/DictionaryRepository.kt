@@ -453,6 +453,21 @@ object DictionaryRepository {
 
     fun lookup(word: String): DictionaryEntry? = entries[word]
 
+    /**
+     * Finds an entry whose English definition contains [english] as a full
+     * sense (e.g. "tea" matches "tea", "to drink" matches "drink").
+     */
+    fun reverseLookup(english: String): DictionaryEntry? {
+        val needle = english.trim().lowercase()
+        if (needle.isBlank()) return null
+        return entries.values.firstOrNull { entry ->
+            entry.definition.lowercase().split(';', ',').any { sense ->
+                val cleaned = sense.trim().removePrefix("to ").trim()
+                cleaned == needle
+            }
+        }
+    }
+
     fun lookupWithContext(hanzi: String, position: Int): DictionaryEntry? {
         // Try 4-char word
         if (position + 3 < hanzi.length) {

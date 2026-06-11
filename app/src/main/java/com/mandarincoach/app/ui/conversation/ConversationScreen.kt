@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mandarincoach.app.data.model.BridgeStage
 import com.mandarincoach.app.data.model.DictionaryEntry
 import com.mandarincoach.app.data.model.Message
 import com.mandarincoach.app.data.model.ProficiencyLevel
@@ -50,6 +51,10 @@ import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.data.repository.DictionaryRepository
 import com.mandarincoach.app.service.SpeechRecognitionService
 import com.mandarincoach.app.service.TextToSpeechService
+import com.mandarincoach.app.ui.conversation.input.ChoiceInputBar
+import com.mandarincoach.app.ui.conversation.input.FreeInputBar
+import com.mandarincoach.app.ui.conversation.input.ScaffoldedInputBar
+import com.mandarincoach.app.ui.conversation.input.WordBankInputBar
 import kotlinx.coroutines.flow.first
 import com.mandarincoach.app.ui.theme.*
 
@@ -172,30 +177,68 @@ fun ConversationScreen(
             )
         },
         bottomBar = {
-            InputBar(
-                text = inputText,
-                onTextChange = { inputText = it },
-                isListening = isListening,
-                isLoading = uiState.isLoading,
-                onSend = {
-                    if (inputText.isNotBlank()) {
-                        viewModel.sendMessage(inputText)
-                        inputText = ""
-                        focusManager.clearFocus()
-                    }
-                },
-                onMicClick = {
+            val onSend = {
+                if (inputText.isNotBlank()) {
+                    viewModel.sendMessage(inputText)
+                    inputText = ""
                     focusManager.clearFocus()
-                    val hasPerm = ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.RECORD_AUDIO
-                    ) == PackageManager.PERMISSION_GRANTED
-                    if (hasPerm) {
-                        sttLauncher.launch(stt.createRecognizerIntent())
-                    } else {
-                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    }
                 }
-            )
+            }
+            val onMicClick = {
+                focusManager.clearFocus()
+                val hasPerm = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasPerm) {
+                    sttLauncher.launch(stt.createRecognizerIntent())
+                } else {
+                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+
+            // Each bridge stage gets its own input surface; if the model
+            // skipped choices/wordBank this turn, fall back to free input.
+            when {
+                uiState.inputMode == BridgeStage.PASSIVE_INPUT && uiState.pendingChoices != null ->
+                    ChoiceInputBar(
+                        choices = uiState.pendingChoices!!,
+                        showEnglish = uiState.showEnglish,
+                        isLoading = uiState.isLoading,
+                        onChoiceSelected = { viewModel.sendMessage(it.hanzi) },
+                        onSpeakChoice = { tts.speak(it.hanzi, uiState.speechSpeed) }
+                    )
+
+                uiState.inputMode == BridgeStage.FRAGMENT_BUILDING && uiState.pendingWordBank != null ->
+                    WordBankInputBar(
+                        words = uiState.pendingWordBank!!,
+                        isLoading = uiState.isLoading,
+                        onSend = { viewModel.sendMessage(it) }
+                    )
+
+                uiState.inputMode == BridgeStage.SCAFFOLDED ->
+                    ScaffoldedInputBar(
+                        text = inputText,
+                        onTextChange = { inputText = it },
+                        isListening = isListening,
+                        isLoading = uiState.isLoading,
+                        isTranslating = uiState.isTranslating,
+                        assistTranslation = uiState.assistTranslation,
+                        onSend = onSend,
+                        onMicClick = onMicClick,
+                        onTranslateWord = { viewModel.translateFragment(it) },
+                        onAssistConsumed = { viewModel.clearAssistTranslation() }
+                    )
+
+                else ->
+                    FreeInputBar(
+                        text = inputText,
+                        onTextChange = { inputText = it },
+                        isListening = isListening,
+                        isLoading = uiState.isLoading,
+                        onSend = onSend,
+                        onMicClick = onMicClick
+                    )
+            }
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -268,6 +311,30 @@ fun ConversationScreen(
                 }
             }
         }
+    }
+
+    // Stage advancement offer
+    uiState.stageAdvanceOffer?.let { next ->
+        AlertDialog(
+            onDismissRequest = { viewModel.declineStageAdvance() },
+            title = { Text("🎉 Ready to level up?") },
+            text = {
+                Text(
+                    "You've completed enough guided sessions. Move on to " +
+                        "${next.emoji} ${next.englishName} (${next.hanzi}) — ${next.description.lowercase()}?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.acceptStageAdvance() }) {
+                    Text("Let's go", color = ChineseRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.declineStageAdvance() }) {
+                    Text("Stay here", color = TextSecondary)
+                }
+            }
+        )
     }
 
     // Dictionary bottom sheet
@@ -705,87 +772,3 @@ private fun DictionarySheet(entry: DictionaryEntry, onDismiss: () -> Unit) {
     }
 }
 
-// ── Input bar ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun InputBar(
-    text: String,
-    onTextChange: (String) -> Unit,
-    isListening: Boolean,
-    isLoading: Boolean,
-    onSend: () -> Unit,
-    onMicClick: () -> Unit
-) {
-    Surface(shadowElevation = 8.dp, color = SurfaceWhite) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .imePadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val micScale by animateFloatAsState(
-                targetValue = if (isListening) 1.15f else 1f,
-                animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                label = "micScale"
-            )
-            FilledIconButton(
-                onClick = onMicClick,
-                modifier = Modifier.size(48.dp).scale(micScale),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = if (isListening) ListeningRed else SurfaceGray,
-                    contentColor = if (isListening) Color.White else TextSecondary
-                )
-            ) {
-                Icon(
-                    if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                    contentDescription = if (isListening) "Stop" else "Speak",
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = {
-                    Text(
-                        if (isListening) "Listening…" else "Type in Chinese or English…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextHint
-                    )
-                },
-                singleLine = false,
-                maxLines = 3,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { onSend() }),
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ChineseRed,
-                    unfocusedBorderColor = SurfaceGray,
-                    focusedContainerColor = SurfaceWhite,
-                    unfocusedContainerColor = BackgroundWarm
-                )
-            )
-
-            FilledIconButton(
-                onClick = onSend,
-                enabled = text.isNotBlank() && !isLoading,
-                modifier = Modifier.size(48.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = ChineseRed,
-                    contentColor = Color.White,
-                    disabledContainerColor = SurfaceGray
-                )
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-    }
-}

@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mandarincoach.app.data.model.BridgeStage
 import com.mandarincoach.app.data.model.LLMProvider
 import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.service.TextToSpeechService
@@ -239,6 +240,53 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     color = ChineseRed,
                     trackColor = ChineseRedLight.copy(alpha = 0.2f)
                 )
+            }
+
+            // Beginner Bridge Section
+            SettingsSection(title = "Beginner Bridge · 入门阶梯") {
+                val savedStage by prefs.bridgeStage.collectAsState(initial = BridgeStage.PASSIVE_INPUT)
+                val savedManual by prefs.bridgeStageManual.collectAsState(initial = false)
+
+                Text(
+                    text = "How you reply in Beginner conversations. \"Auto\" advances you as you complete sessions.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+                Spacer(Modifier.height(8.dp))
+
+                var stageExpanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(
+                        onClick = { stageExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        val label = "${savedStage.emoji} ${savedStage.englishName} (${savedStage.hanzi})" +
+                            if (savedManual) "" else " · Auto"
+                        Text(label)
+                    }
+                    DropdownMenu(expanded = stageExpanded, onDismissRequest = { stageExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Auto — advance as I improve") },
+                            onClick = {
+                                scope.launch { prefs.setBridgeStageManual(false) }
+                                stageExpanded = false
+                            }
+                        )
+                        BridgeStage.entries.forEach { stage ->
+                            DropdownMenuItem(
+                                text = { Text("${stage.emoji} ${stage.englishName} — ${stage.description}") },
+                                onClick = {
+                                    scope.launch {
+                                        prefs.setBridgeStage(stage)
+                                        prefs.setBridgeStageManual(true)
+                                    }
+                                    stageExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             // LLM Backend Section

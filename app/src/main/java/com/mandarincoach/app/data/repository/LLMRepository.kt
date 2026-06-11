@@ -119,6 +119,53 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
         }
     }
 
+    /**
+     * Translates a single English word/phrase into Mandarin for the
+     * scaffolded-input inline assist. Returns it as a [ChoiceOption]
+     * (hanzi + pinyin, english echoes the source word).
+     */
+    suspend fun translateFragment(
+        word: String,
+        apiKey: String,
+        provider: LLMProvider = LLMProvider.CLAUDE,
+        customModel: String = "",
+        customBaseUrl: String = ""
+    ): Result<ChoiceOption> = withContext(Dispatchers.IO) {
+        runCatching {
+            val systemPrompt = """
+                You are a Mandarin Chinese dictionary. Translate the English word or short phrase the user sends into the most common everyday Mandarin equivalent.
+                Respond ONLY with valid JSON: {"hanzi": "...", "pinyin": "tone-marked pinyin", "english": "the original word"}
+            """.trimIndent()
+
+            val url = when {
+                provider == LLMProvider.CLAUDE -> LLMProvider.CLAUDE.baseUrl
+                provider == LLMProvider.PRIVATE && customBaseUrl.isNotBlank() -> customBaseUrl
+                provider.baseUrl.isNotBlank() -> provider.baseUrl
+                else -> customBaseUrl
+            }
+            val model = if (customModel.trim().isNotBlank()) customModel.trim() else provider.defaultModel
+
+            val request = if (provider == LLMProvider.CLAUDE) {
+                buildClaudeRequest(url, apiKey, model, systemPrompt, emptyList(), word, 100)
+            } else {
+                buildOpenAICompatibleRequest(url, apiKey, model, systemPrompt, emptyList(), word)
+            }
+
+            val response = client.newCall(request).execute()
+            val responseText = response.body?.string() ?: throw Exception("Empty response")
+            if (!response.isSuccessful) throw Exception("API Error ${response.code}")
+
+            val rawText = if (provider == LLMProvider.CLAUDE) {
+                json.decodeFromString<ClaudeApiResponse>(responseText).content.firstOrNull()?.text
+            } else {
+                json.decodeFromString<OpenAIResponse>(responseText).choices.firstOrNull()?.message?.content
+            } ?: throw Exception("No content")
+
+            val parsed = CoachResponseParser.parse(rawText)
+            ChoiceOption(hanzi = parsed.hanzi, pinyin = parsed.pinyin, english = word)
+        }
+    }
+
     private fun buildClaudeRequest(
         url: String,
         apiKey: String,

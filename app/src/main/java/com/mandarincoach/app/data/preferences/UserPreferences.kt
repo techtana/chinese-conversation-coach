@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.mandarincoach.app.data.model.BridgeStage
 import com.mandarincoach.app.data.model.LLMProvider
 import com.mandarincoach.app.data.model.ProficiencyLevel
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +40,9 @@ class UserPreferences(private val context: Context) {
         private val TOTAL_COST = floatPreferencesKey("total_cost")
         private val LEARNED_WORDS = stringPreferencesKey("learned_words")
         private val NEW_WORDS_TARGET = intPreferencesKey("new_words_target")
+        private val BRIDGE_STAGE = stringPreferencesKey("bridge_stage")
+        private val BRIDGE_STAGE_MANUAL = stringPreferencesKey("bridge_stage_manual")
+        private val STAGE_QUALIFYING_SESSIONS = stringPreferencesKey("stage_qualifying_sessions")
     }
 
     val userName: Flow<String> = context.dataStore.data.map { it[USER_NAME] ?: "" }
@@ -64,6 +68,20 @@ class UserPreferences(private val context: Context) {
     val proficiencyLevel: Flow<ProficiencyLevel> = context.dataStore.data.map {
         runCatching { ProficiencyLevel.valueOf(it[PROFICIENCY_LEVEL] ?: "") }
             .getOrDefault(ProficiencyLevel.BEGINNER)
+    }
+
+    val bridgeStage: Flow<BridgeStage> = context.dataStore.data.map {
+        runCatching { BridgeStage.valueOf(it[BRIDGE_STAGE] ?: "") }
+            .getOrDefault(BridgeStage.PASSIVE_INPUT)
+    }
+
+    val bridgeStageManual: Flow<Boolean> = context.dataStore.data.map {
+        (it[BRIDGE_STAGE_MANUAL] ?: "false") == "true"
+    }
+
+    // Stored as "STAGE=count,STAGE=count"
+    val stageQualifyingSessions: Flow<Map<BridgeStage, Int>> = context.dataStore.data.map { prefs ->
+        parseStageSessions(prefs[STAGE_QUALIFYING_SESSIONS])
     }
 
     val speechSpeed: Flow<Float> = context.dataStore.data.map { it[SPEECH_SPEED] ?: 0.85f }
@@ -170,4 +188,28 @@ class UserPreferences(private val context: Context) {
     suspend fun setShowEnglish(show: Boolean) {
         context.dataStore.edit { it[SHOW_ENGLISH] = show.toString() }
     }
+
+    suspend fun setBridgeStage(stage: BridgeStage) {
+        context.dataStore.edit { it[BRIDGE_STAGE] = stage.name }
+    }
+
+    suspend fun setBridgeStageManual(manual: Boolean) {
+        context.dataStore.edit { it[BRIDGE_STAGE_MANUAL] = manual.toString() }
+    }
+
+    suspend fun incrementQualifyingSessions(stage: BridgeStage) {
+        context.dataStore.edit { prefs ->
+            val counts = parseStageSessions(prefs[STAGE_QUALIFYING_SESSIONS]).toMutableMap()
+            counts[stage] = (counts[stage] ?: 0) + 1
+            prefs[STAGE_QUALIFYING_SESSIONS] = counts.entries.joinToString(",") { "${it.key.name}=${it.value}" }
+        }
+    }
+
+    private fun parseStageSessions(raw: String?): Map<BridgeStage, Int> =
+        raw?.split(",")?.mapNotNull { pair ->
+            val (name, count) = pair.split("=").takeIf { it.size == 2 } ?: return@mapNotNull null
+            val stage = runCatching { BridgeStage.valueOf(name) }.getOrNull() ?: return@mapNotNull null
+            val value = count.toIntOrNull() ?: return@mapNotNull null
+            stage to value
+        }?.toMap() ?: emptyMap()
 }
