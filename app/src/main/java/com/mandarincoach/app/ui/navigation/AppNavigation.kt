@@ -13,9 +13,10 @@ import com.mandarincoach.app.ui.settings.SettingsScreen
 
 object Routes {
     const val HOME = "home"
-    const val CONVERSATION = "conversation/{level}"
+    const val CONVERSATION = "conversation/{level}?scenario={scenario}"
     const val SETTINGS = "settings"
-    fun conversation(level: ProficiencyLevel) = "conversation/${level.name}"
+    fun conversation(level: ProficiencyLevel, scenarioId: String? = null) =
+        "conversation/${level.name}" + (scenarioId?.let { "?scenario=$it" } ?: "")
 }
 
 @Composable
@@ -28,19 +29,30 @@ fun AppNavigation() {
                 onLevelSelected = { level ->
                     navController.navigate(Routes.conversation(level))
                 },
+                onScenarioSelected = { level, scenarioId ->
+                    navController.navigate(Routes.conversation(level, scenarioId))
+                },
                 onSettingsClick = { navController.navigate(Routes.SETTINGS) }
             )
         }
 
         composable(
             route = Routes.CONVERSATION,
-            arguments = listOf(navArgument("level") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("level") { type = NavType.StringType },
+                navArgument("scenario") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
         ) { backStack ->
             val levelName = backStack.arguments?.getString("level") ?: ProficiencyLevel.BEGINNER.name
             val level = runCatching { ProficiencyLevel.valueOf(levelName) }
                 .getOrDefault(ProficiencyLevel.BEGINNER)
             ConversationScreen(
                 level = level,
+                scenarioId = backStack.arguments?.getString("scenario"),
                 onNavigateBack = { navController.popBackStack() },
                 onSettingsClick = { navController.navigate(Routes.SETTINGS) }
             )

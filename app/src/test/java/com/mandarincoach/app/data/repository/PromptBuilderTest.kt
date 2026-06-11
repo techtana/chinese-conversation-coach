@@ -84,6 +84,37 @@ class PromptBuilderTest {
     }
 
     @Test
+    fun `scenario prompt swaps persona and lists allowed item ids`() {
+        val hotel = ScenarioRepository.byId("hotel_checkin")!!
+        val prompt = PromptBuilder.build(ProficiencyLevel.BEGINNER, scenario = hotel)
+        assertFalse(prompt.contains("conversation coach"))
+        assertTrue(prompt.contains("hotel receptionist"))
+        assertTrue(prompt.contains("NOT a teacher"))
+        assertTrue(prompt.contains("room_key"))
+        assertTrue(prompt.contains("wifi_password"))
+        assertTrue(prompt.contains("\"scenario\""))
+    }
+
+    @Test
+    fun `earned items are excluded from award instructions`() {
+        val hotel = ScenarioRepository.byId("hotel_checkin")!!
+        val prompt = PromptBuilder.build(
+            ProficiencyLevel.BEGINNER,
+            scenario = hotel,
+            earnedItems = setOf("room_key")
+        )
+        assertTrue(prompt.contains("already has: room_key"))
+        assertTrue(prompt.contains("Items still to earn: [wifi_password]"))
+    }
+
+    @Test
+    fun `non-scenario prompt has no scenario contract`() {
+        val prompt = PromptBuilder.build(ProficiencyLevel.BEGINNER)
+        assertFalse(prompt.contains("\"scenario\""))
+        assertFalse(prompt.contains("ROLEPLAY"))
+    }
+
+    @Test
     fun `correction instruction always present`() {
         BridgeStage.entries.forEach { stage ->
             val prompt = PromptBuilder.build(ProficiencyLevel.BEGINNER, stage = stage)

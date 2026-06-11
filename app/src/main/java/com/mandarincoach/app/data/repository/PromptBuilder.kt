@@ -2,6 +2,7 @@ package com.mandarincoach.app.data.repository
 
 import com.mandarincoach.app.data.model.BridgeStage
 import com.mandarincoach.app.data.model.ProficiencyLevel
+import com.mandarincoach.app.data.model.Scenario
 
 /**
  * Assembles the system prompt from composable blocks. The JSON contract
@@ -16,15 +17,18 @@ object PromptBuilder {
         learningGoals: String = "",
         interests: String = "",
         activeVocab: List<String> = emptyList(),
-        stage: BridgeStage = BridgeStage.FREE_FLOW
+        stage: BridgeStage = BridgeStage.FREE_FLOW,
+        scenario: Scenario? = null,
+        earnedItems: Set<String> = emptySet()
     ): String {
         val sections = listOf(
-            personaBlock(level),
+            if (scenario != null) scenarioPersonaBlock(level, scenario) else personaBlock(level),
             userContextBlock(userName, learningGoals, interests),
             vocabBlock(level, activeVocab),
             levelGuidanceBlock(level),
             stageBlock(stage),
-            jsonContractBlock(stage),
+            scenarioBlock(scenario, earnedItems),
+            jsonContractBlock(stage, scenario != null),
             rulesBlock()
         ).filter { it.isNotBlank() }
 
@@ -118,7 +122,33 @@ object PromptBuilder {
         BridgeStage.FREE_FLOW -> ""
     }
 
-    private fun jsonContractBlock(stage: BridgeStage): String {
+    private fun scenarioPersonaBlock(level: ProficiencyLevel, scenario: Scenario): String = """
+        You are playing a character in a Mandarin roleplay scenario: ${scenario.aiRole}.
+        The student is: ${scenario.userRole}.
+        Setting: ${scenario.setting}
+        Student level: ${level.englishName} (${level.hanzi})
+    """.trimIndent()
+
+    private fun scenarioBlock(scenario: Scenario?, earnedItems: Set<String>): String {
+        if (scenario == null) return ""
+        val itemIds = scenario.items.joinToString(", ") { it.id }
+        val remaining = scenario.items.filter { it.id !in earnedItems }
+        val earnedLine = if (earnedItems.isEmpty()) ""
+        else "\nThe student already has: ${earnedItems.joinToString(", ")} — do NOT award these again."
+
+        return """
+            ROLEPLAY RULES — "${scenario.title}" (${scenario.hanziTitle}):
+            - You are ${scenario.aiRole}, NOT a teacher. Stay in character. Never grade, praise, or explain language in your "hanzi" reply.
+            - React in-story to the student's language: if they say something confusing or rude, your character shows it (confusion, the wrong item arrives, a worried look) and the story adapts.
+            - Scenario goals for the student: ${scenario.goals.joinToString("; ")}.
+            - When the student successfully completes a step, award AT MOST one item per message by setting "scenario": {"itemEarned": "<id>"} using EXACTLY one of these ids: [$itemIds]. Items still to earn: [${remaining.joinToString(", ") { it.id }}].$earnedLine
+            - Set "scenario": {"mood": "..."} each message to one of: happy, neutral, confused, annoyed, impressed — your character's current reaction.
+            - Only after ALL items are earned and the scene reaches a natural close, set "scenario": {"completed": true}.
+            - Language notes go ONLY in the "correction" field (as the coach stepping in quietly), never in your in-character reply.
+        """.trimIndent()
+    }
+
+    private fun jsonContractBlock(stage: BridgeStage, inScenario: Boolean = false): String {
         val fields = buildString {
             appendLine("""  "hanzi": "Chinese characters here",""")
             appendLine("""  "pinyin": "Pīnyīn with tone marks here",""")
@@ -137,6 +167,10 @@ object PromptBuilder {
                     append("""  "wordBank": ["word1", "word2", "word3"] (REQUIRED: segmented words of expectedAnswer + 1-2 distractors, shuffled)""")
                 }
                 else -> {}
+            }
+            if (inScenario) {
+                appendLine(",")
+                append("""  "scenario": {"itemEarned": "item id or omit", "mood": "happy|neutral|confused|annoyed|impressed", "completed": false}""")
             }
         }
         return "CRITICAL: Always respond ONLY with valid JSON in this exact structure:\n{\n$fields\n}"

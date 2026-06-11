@@ -51,6 +51,8 @@ import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.data.repository.DictionaryRepository
 import com.mandarincoach.app.service.SpeechRecognitionService
 import com.mandarincoach.app.service.TextToSpeechService
+import com.mandarincoach.app.ui.conversation.components.ScenarioCompleteDialog
+import com.mandarincoach.app.ui.conversation.components.ScenarioHud
 import com.mandarincoach.app.ui.conversation.input.ChoiceInputBar
 import com.mandarincoach.app.ui.conversation.input.FreeInputBar
 import com.mandarincoach.app.ui.conversation.input.ScaffoldedInputBar
@@ -62,6 +64,7 @@ import com.mandarincoach.app.ui.theme.*
 @Composable
 fun ConversationScreen(
     level: ProficiencyLevel,
+    scenarioId: String? = null,
     onNavigateBack: () -> Unit,
     onSettingsClick: () -> Unit,
     viewModel: ConversationViewModel = viewModel()
@@ -101,8 +104,8 @@ fun ConversationScreen(
         }
     }
 
-    LaunchedEffect(level) { 
-        viewModel.initialize(level)
+    LaunchedEffect(level, scenarioId) {
+        viewModel.initialize(level, scenarioId)
         
         // Check if profile is empty and guide the user
         val prefs = UserPreferences(context)
@@ -286,6 +289,15 @@ fun ConversationScreen(
                 )
             }
 
+            // Scenario mission strip
+            uiState.scenario?.let { scenario ->
+                ScenarioHud(
+                    scenario = scenario,
+                    mood = uiState.scenarioMood,
+                    earnedItems = uiState.earnedItems
+                )
+            }
+
             // Messages list
             LazyColumn(
                 state = listState,
@@ -311,6 +323,25 @@ fun ConversationScreen(
                 }
             }
         }
+    }
+
+    // Toast when an inventory item is earned
+    LaunchedEffect(uiState.earnedItems.size) {
+        uiState.earnedItems.lastOrNull()?.let { item ->
+            snackbarHostState.showSnackbar("${item.emoji} ${item.name} · ${item.hanzi} earned!")
+        }
+    }
+
+    // Scenario completion
+    if (uiState.showScenarioComplete && uiState.scenario != null) {
+        ScenarioCompleteDialog(
+            scenario = uiState.scenario!!,
+            onBackToMissions = {
+                viewModel.dismissScenarioComplete()
+                onNavigateBack()
+            },
+            onKeepChatting = { viewModel.dismissScenarioComplete() }
+        )
     }
 
     // Stage advancement offer

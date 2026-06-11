@@ -39,7 +39,9 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
         provider: LLMProvider = LLMProvider.CLAUDE,
         customModel: String = "",
         customBaseUrl: String = "",
-        stage: BridgeStage = BridgeStage.FREE_FLOW
+        stage: BridgeStage = BridgeStage.FREE_FLOW,
+        scenario: Scenario? = null,
+        earnedItems: Set<String> = emptySet()
     ): Result<CoachResponse> = withContext(Dispatchers.IO) {
         runCatching {
             Log.d("LLMRepository", "Starting sendMessage for provider: ${provider.name}")
@@ -56,12 +58,15 @@ class LLMRepository(private val prefs: UserPreferences? = null) {
                 learningGoals = learningGoals,
                 interests = interests,
                 activeVocab = activeVocab,
-                stage = stage
+                stage = stage,
+                scenario = scenario,
+                earnedItems = earnedItems
             )
 
-            // Choice lists and word banks consume extra output tokens
-            val maxTokens = when (stage) {
-                BridgeStage.PASSIVE_INPUT, BridgeStage.FRAGMENT_BUILDING -> 1000
+            // Choice lists, word banks and scenario events consume extra output tokens
+            val maxTokens = when {
+                stage == BridgeStage.PASSIVE_INPUT || stage == BridgeStage.FRAGMENT_BUILDING -> 1000
+                scenario != null -> 800
                 else -> 600
             }
 

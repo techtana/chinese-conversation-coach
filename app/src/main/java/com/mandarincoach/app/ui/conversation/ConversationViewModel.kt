@@ -9,9 +9,13 @@ import com.mandarincoach.app.data.model.ChoiceOption
 import com.mandarincoach.app.data.model.CoachResponse
 import com.mandarincoach.app.data.model.Message
 import com.mandarincoach.app.data.model.ProficiencyLevel
+import com.mandarincoach.app.data.model.Scenario
+import com.mandarincoach.app.data.model.ScenarioItem
+import com.mandarincoach.app.data.preferences.ProgressRepository
 import com.mandarincoach.app.data.preferences.UserPreferences
 import com.mandarincoach.app.data.repository.DictionaryRepository
 import com.mandarincoach.app.data.repository.LLMRepository
+import com.mandarincoach.app.data.repository.ScenarioRepository
 import com.mandarincoach.app.data.repository.VocabularyRepository
 import com.mandarincoach.app.domain.StageProgressionEngine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +36,11 @@ data class ConversationUiState(
     val pendingWordBank: List<String>? = null,
     val stageAdvanceOffer: BridgeStage? = null,
     val assistTranslation: ChoiceOption? = null,
-    val isTranslating: Boolean = false
+    val isTranslating: Boolean = false,
+    val scenario: Scenario? = null,
+    val earnedItems: List<ScenarioItem> = emptyList(),
+    val scenarioMood: String? = null,
+    val showScenarioComplete: Boolean = false
 )
 
 class ConversationViewModel(application: Application) : AndroidViewModel(application) {
@@ -42,6 +50,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private val prefs = UserPreferences(application)
+    private val progressRepo = ProgressRepository(application)
     private val repository = LLMRepository(prefs)
 
     private val _uiState = MutableStateFlow(ConversationUiState())
@@ -71,9 +80,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun initialize(level: ProficiencyLevel) {
-        Log.d("ConversationVM", "Initializing for level: $level")
+    fun initialize(level: ProficiencyLevel, scenarioId: String? = null) {
+        Log.d("ConversationVM", "Initializing for level: $level, scenario: $scenarioId")
         currentLevel = level
+        val scenario = scenarioId?.let { ScenarioRepository.byId(it) }
+        _uiState.value = _uiState.value.copy(scenario = scenario)
         viewModelScope.launch {
             // The bridge only applies to beginners; follow stage changes
             // (e.g. manual override in settings) for the rest of the session.
@@ -106,11 +117,13 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private fun sendGreeting() {
-        val greeting = when (currentLevel) {
-            ProficiencyLevel.BEGINNER -> "你好！请用简单的中文和我练习。"
-            ProficiencyLevel.INTERMEDIATE -> "你好！我想练习中文对话，可以从日常话题开始吗？"
-            ProficiencyLevel.ADVANCED -> "你好！我想进行一次有深度的中文对话，可以聊聊文化或社会话题吗？"
-            ProficiencyLevel.FLUENT -> "你好！咱们来一场自然流畅的中文对话吧，什么话题都行。"
+        val scenario = _uiState.value.scenario
+        val greeting = when {
+            scenario != null -> "（${scenario.hanziTitle}——场景开始）"
+            currentLevel == ProficiencyLevel.BEGINNER -> "你好！请用简单的中文和我练习。"
+            currentLevel == ProficiencyLevel.INTERMEDIATE -> "你好！我想练习中文对话，可以从日常话题开始吗？"
+            currentLevel == ProficiencyLevel.ADVANCED -> "你好！我想进行一次有深度的中文对话，可以聊聊文化或社会话题吗？"
+            else -> "你好！咱们来一场自然流畅的中文对话吧，什么话题都行。"
         }
         sendMessage(greeting)
     }
@@ -160,7 +173,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 provider = provider,
                 customModel = cModel,
                 customBaseUrl = cUrl,
-                stage = currentStage
+                stage = currentStage,
+                scenario = _uiState.value.scenario,
+                earnedItems = _uiState.value.earnedItems.map { it.id }.toSet()
             ).onSuccess { response ->
                 // Auto-learn words used by the AI
                 viewModelScope.launch {
@@ -177,7 +192,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                     pendingChoices = response.choices?.shuffled(),
                     pendingWordBank = response.wordBank
                 )
-                onUserTurnCompleted()
+                val scenarioCompleted = handleScenarioEvent(response)
+                onUserTurnCompleted(scenarioCompleted)
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
                     messages = currentMessages,
@@ -199,20 +215,56 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             messages = emptyList(),
             error = null,
             pendingChoices = null,
-            pendingWordBank = null
+            pendingWordBank = null,
+            earnedItems = emptyList(),
+            scenarioMood = null,
+            showScenarioComplete = false
         )
         if (apiKey.isNotBlank()) sendGreeting()
     }
 
     /**
-     * Counts successful user turns; once the session qualifies, records it
-     * and asks the progression engine whether to offer the next stage.
+     * Validates and applies a scenario event from the model: awards items,
+     * updates the avatar mood, and records completion once every item has
+     * been earned. Returns true when the scenario just completed.
      */
-    private fun onUserTurnCompleted() {
+    private fun handleScenarioEvent(response: CoachResponse): Boolean {
+        val scenario = _uiState.value.scenario ?: return false
+        val rawEvent = response.scenario ?: return false
+
+        val earnedIds = _uiState.value.earnedItems.map { it.id }.toSet()
+        val event = scenario.validateEvent(rawEvent, earnedIds)
+
+        val newItem = event.itemEarned?.let { id -> scenario.items.find { it.id == id } }
+        if (newItem != null) {
+            viewModelScope.launch { progressRepo.addEarnedItem(scenario.id, newItem.id) }
+        }
+        if (event.completed) {
+            viewModelScope.launch { progressRepo.recordScenarioCompletion(scenario.id, currentStage.name) }
+        }
+
+        _uiState.value = _uiState.value.copy(
+            earnedItems = _uiState.value.earnedItems + listOfNotNull(newItem),
+            scenarioMood = event.mood ?: _uiState.value.scenarioMood,
+            showScenarioComplete = _uiState.value.showScenarioComplete || event.completed
+        )
+        return event.completed
+    }
+
+    fun dismissScenarioComplete() {
+        _uiState.value = _uiState.value.copy(showScenarioComplete = false)
+    }
+
+    /**
+     * Counts successful user turns; once the session qualifies (enough
+     * turns, or a completed scenario), records it and asks the progression
+     * engine whether to offer the next stage.
+     */
+    private fun onUserTurnCompleted(scenarioCompleted: Boolean = false) {
         userTurnCount++
         if (qualifiedThisConversation) return
         if (currentLevel != ProficiencyLevel.BEGINNER || currentStage == BridgeStage.FREE_FLOW) return
-        if (userTurnCount < StageProgressionEngine.QUALIFYING_TURNS) return
+        if (!scenarioCompleted && userTurnCount < StageProgressionEngine.QUALIFYING_TURNS) return
 
         qualifiedThisConversation = true
         viewModelScope.launch {
